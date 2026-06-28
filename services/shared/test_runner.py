@@ -44,7 +44,7 @@ def check(cond, msg):
 # 1. handler called once per queued message
 # --------------------------------------------------------------------------- #
 def test_handler_called_once_per_message():
-    bus = Bus()
+    bus = _MemoryBus()  # these tests assert MemoryBus drain semantics regardless of $BUS_BACKEND
     seen = []
     for i in range(3):
         bus.produce("t.in", key=str(i), payload={"n": i})
@@ -62,7 +62,7 @@ def test_handler_called_once_per_message():
 # --------------------------------------------------------------------------- #
 def test_raising_handler_not_acked():
     """A single delivery of a raising handler must NOT ack and must NOT DLQ."""
-    bus = Bus()
+    bus = _MemoryBus()  # these tests assert MemoryBus drain semantics regardless of $BUS_BACKEND
     bus.produce("t.fail", key="k", payload={"x": 1})
 
     acked = {"n": 0}
@@ -88,7 +88,7 @@ def test_redelivery_then_deadletter():
     _process_message with an incrementing delivery_count — exactly what the Redis
     worker would do as XPENDING.times_delivered climbs.
     """
-    bus = Bus()
+    bus = _MemoryBus()  # these tests assert MemoryBus drain semantics regardless of $BUS_BACKEND
     max_redeliveries = 3
 
     def boom(_payload):
@@ -117,7 +117,7 @@ def test_redelivery_then_deadletter():
 def test_handler_that_eventually_succeeds_is_acked_not_dlqd():
     """If a redelivered message finally succeeds before the cap, it is acked and
     never dead-lettered."""
-    bus = Bus()
+    bus = _MemoryBus()  # these tests assert MemoryBus drain semantics regardless of $BUS_BACKEND
     attempts = {"n": 0}
 
     def flaky(_payload):
@@ -144,7 +144,7 @@ def test_handler_that_eventually_succeeds_is_acked_not_dlqd():
 # 3. multi-topic dispatch routes to the right handler
 # --------------------------------------------------------------------------- #
 def test_multi_topic_dispatch():
-    bus = Bus()
+    bus = _MemoryBus()  # these tests assert MemoryBus drain semantics regardless of $BUS_BACKEND
     bus.produce("topic.a", key="a", payload={"who": "a"})
     bus.produce("topic.b", key="b", payload={"who": "b"})
     bus.produce("topic.b", key="b2", payload={"who": "b"})
