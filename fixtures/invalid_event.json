@@ -1,0 +1,18 @@
+{
+  "_comment": "NEGATIVE fixture. Two intentional errors: type_uid != class_uid*100+activity_id (should be 300204), and a malformed MAC.",
+  "metadata": {
+    "version": "1.1.0",
+    "product": { "name": "Active Directory", "vendor_name": "Microsoft" },
+    "original_format": "winevent"
+  },
+  "class_uid": 3002,
+  "category_uid": 3,
+  "activity_id": 4,
+  "type_uid": 300999,
+  "severity_id": 4,
+  "time": 1750000000000,
+  "status": "Failure",
+  "src_endpoint": { "ip": "10.20.30.40", "mac": "ZZ:BB:CC:DD:EE:01" },
+  "actor": { "user": { "name": "jdoe" } },
+  "siem": { "sector": "bank", "source_type": "active_directory", "ingest_id": "44444444-4444-4444-4444-444444444444" }
+}

@@ -1,0 +1,42 @@
+# Contract A — OCSF Class Reference
+
+Restricted OCSF profile for the SIEM (Banking + Data Center). Every parser maps its
+source events to one of these classes. The `type_uid` is **derived, not free**:
+
+```
+type_uid = class_uid * 100 + activity_id
+```
+
+The contract validator rejects any event where this does not hold.
+
+| category_uid | class_uid | Class name              | Used for                                   |
+|--------------|-----------|-------------------------|--------------------------------------------|
+| 1 (System)   | 1001      | File System Activity    | auditd file access, config changes         |
+| 1 (System)   | 1002      | Kernel / Process        | process exec, privilege use                |
+| 3 (IAM)      | 3002      | Authentication          | login success/failure, AD/LDAP/RADIUS      |
+| 3 (IAM)      | 3003      | Account Change          | role/permission change, user create/delete |
+| 4 (Network)  | 4001      | Network Activity        | NetFlow/IPFIX flows, firewall accept/deny  |
+| 4 (Network)  | 4002      | DNS / HTTP Activity     | proxy, WAF, DNS logs                        |
+| 6 (App)      | 6003      | API Activity            | hypervisor API, k8s API, REST              |
+| 6 (App)      | 6005      | Datastore Activity      | DB query/audit (Oracle, DB2, Postgres)     |
+
+## Common activity_id values
+
+Authentication (3002): `1` Logon, `2` Logoff, `3` Auth Ticket, `4` Failure
+Account Change (3003): `1` Create, `2` Enable, `3` Password Change, `4` Delete, `5` Privilege Grant
+Network Activity (4001): `1` Open, `2` Close, `6` Deny, `7` Accept
+API Activity (6003): `1` Create, `2` Read, `3` Update, `4` Delete
+Datastore (6005): `1` Query, `2` Write, `3` Update, `4` Delete, `5` Privileged Op
+
+## Worked examples
+
+- Failed login → class 3002, activity 4 → `type_uid = 300204`
+- Firewall deny → class 4001, activity 6 → `type_uid = 400106`
+- DB privileged op → class 6005, activity 5 → `type_uid = 600505`
+- VM delete via API → class 6003, activity 4 → `type_uid = 600304`
+
+## siem.* routing namespace
+
+OCSF describes *what* happened; the `siem.*` block describes *how we route it*.
+It never overlaps OCSF field names. `sector` and `source_type` drive index selection
+(Contract E) and rule scoping (Contract D). `score` is added later by WS-4.

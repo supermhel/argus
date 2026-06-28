@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://siem.local/contracts/ocsf-event.schema.json",
+  "title": "SIEM Normalized OCSF Event (Contract A)",
+  "description": "Pivot format. Every parser MUST emit events validating against this schema. Restricted OCSF profile covering Banking + Data Center. Invariant enforced by the contract validator: type_uid == class_uid*100 + activity_id.",
+  "type": "object",
+  "required": [
+    "metadata",
+    "class_uid",
+    "category_uid",
+    "activity_id",
+    "type_uid",
+    "severity_id",
+    "time",
+    "siem"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["version", "product"],
+      "properties": {
+        "version": { "type": "string", "description": "OCSF schema version, e.g. 1.1.0" },
+        "product": {
+          "type": "object",
+          "required": ["name"],
+          "properties": {
+            "name": { "type": "string" },
+            "vendor_name": { "type": "string" },
+            "version": { "type": "string" }
+          }
+        },
+        "logged_time": { "type": "integer", "description": "epoch ms when collector received it" },
+        "original_format": { "type": "string", "enum": ["syslog", "snmp", "netflow", "winevent", "cef", "leef", "json", "api"] }
+      }
+    },
+    "class_uid": {
+      "type": "integer",
+      "description": "OCSF class. See ocsf-classes.md.",
+      "enum": [3002, 3003, 4001, 4002, 6003, 6005, 1001, 1002]
+    },
+    "category_uid": {
+      "type": "integer",
+      "description": "OCSF category (class_uid / 1000, floored).",
+      "enum": [1, 3, 4, 6]
+    },
+    "activity_id": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 99,
+      "description": "Activity within the class."
+    },
+    "type_uid": {
+      "type": "integer",
+      "description": "MUST equal class_uid*100 + activity_id (checked by validator)."
+    },
+    "severity_id": {
+      "type": "integer",
+      "description": "0 Unknown,1 Info,2 Low,3 Medium,4 High,5 Critical,6 Fatal",
+      "enum": [0, 1, 2, 3, 4, 5, 6]
+    },
+    "time": { "type": "integer", "description": "epoch ms of the event" },
+    "message": { "type": "string" },
+    "status": { "type": "string", "enum": ["Success", "Failure", "Unknown"] },
+    "src_endpoint": { "$ref": "#/$defs/endpoint" },
+    "dst_endpoint": { "$ref": "#/$defs/endpoint" },
+    "actor": {
+      "type": "object",
+      "properties": {
+        "user": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "uid": { "type": "string" },
+            "domain": { "type": "string" }
+          }
+        },
+        "process": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "pid": { "type": "integer" }
+          }
+        }
+      }
+    },
+    "siem": {
+      "type": "object",
+      "description": "SIEM routing namespace. Never collides with OCSF fields.",
+      "required": ["sector", "source_type", "ingest_id"],
+      "properties": {
+        "sector": { "type": "string", "enum": ["bank", "datacenter", "common"] },
+        "source_type": { "type": "string", "description": "e.g. cisco_asa, fortinet, linux_auditd, vmware_vsphere, k8s, oracle_db" },
+        "ingest_id": { "type": "string", "description": "uuid assigned by collector" },
+        "tenant": { "type": "string" },
+        "score": { "type": "integer", "minimum": 0, "maximum": 100, "description": "set by WS-4 detection, absent at ingest" }
+      }
+    }
+  },
+  "$defs": {
+    "endpoint": {
+      "type": "object",
+      "properties": {
+        "ip": {
+          "type": "string",
+          "pattern": "^((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.){3}(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)$|^([0-9a-fA-F:]+:[0-9a-fA-F:]*)$"
+        },
+        "mac": {
+          "type": "string",
+          "pattern": "^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$"
+        },
+        "hostname": { "type": "string" },
+        "port": { "type": "integer", "minimum": 0, "maximum": 65535 }
+      }
+    }
+  }
+}

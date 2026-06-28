@@ -1,0 +1,22 @@
+title: Privileged database operation outside maintenance window
+id: 2a9d7b41-5e6c-4f88-bb12-3c0a1e7d4f02
+status: stable
+description: >
+  Privileged datastore operation (grant/alter) on a banking DB. High weight because
+  it maps directly to PCI-DSS access-control monitoring.
+level: critical
+logsource:
+  category: datastore_activity
+detection:
+  priv_op:
+    class_uid: 6005
+    activity_id: 5
+  bank:
+    siem.sector: bank
+  condition: priv_op and bank
+fields:
+  - actor.user.name
+  - dst_endpoint.hostname
+siem:
+  sector: bank
+  score_weight: 85

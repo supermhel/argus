@@ -1,0 +1,19 @@
+{
+  "metadata": {
+    "version": "1.1.0",
+    "product": { "name": "ASA", "vendor_name": "Cisco" },
+    "logged_time": 1750000200010,
+    "original_format": "syslog"
+  },
+  "class_uid": 4001,
+  "category_uid": 4,
+  "activity_id": 6,
+  "type_uid": 400106,
+  "severity_id": 3,
+  "time": 1750000200000,
+  "status": "Failure",
+  "message": "Deny tcp src outside:203.0.113.5/51000 dst inside:10.0.0.10/22",
+  "src_endpoint": { "ip": "203.0.113.5", "port": 51000 },
+  "dst_endpoint": { "ip": "10.0.0.10", "port": 22 },
+  "siem": { "sector": "common", "source_type": "cisco_asa", "ingest_id": "33333333-3333-3333-3333-333333333333" }
+}

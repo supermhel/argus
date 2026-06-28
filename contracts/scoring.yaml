@@ -1,0 +1,23 @@
+# Contract D — Scoring model (machine-readable)
+# Consumed by WS-4 (compute score) and WS-5 (funnel routing).
+version: 1
+
+# Funnel thresholds. Single source of truth.
+thresholds:
+  store_only_below: 20      # score < 20  -> index only
+  classifier_min: 20        # 20..59      -> light ML classifier
+  llm_min: 60               # >= 60       -> enqueue ai.requests for LLM
+
+# Severity floors: a matching rule of this level guarantees at least this score.
+severity_floor:
+  informational: 0
+  low: 10
+  medium: 40
+  high: 70
+  critical: 80
+
+# How to combine multiple matching rules on one event.
+combine: capped_sum   # sum of score_weight, clamped to [0,100]
+clamp:
+  min: 0
+  max: 100

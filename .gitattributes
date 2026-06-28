@@ -1,0 +1,15 @@
+# Normalize line endings. This project runs in Linux containers, so shell
+# scripts and Python must be checked out with LF even on Windows clones.
+* text=auto eol=lf
+
+*.sh    text eol=lf
+*.py    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+Dockerfile text eol=lf
+
+# Binary assets (don't touch)
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary

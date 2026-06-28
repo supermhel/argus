@@ -1,0 +1,30 @@
+{
+  "index_patterns": ["assets"],
+  "_comment": "Permanent inventory index. MAC is the document _id in WS-6.",
+  "template": {
+    "settings": { "number_of_shards": 1, "number_of_replicas": 1 },
+    "mappings": {
+      "dynamic": "false",
+      "properties": {
+        "mac": { "type": "keyword" },
+        "vendor": { "type": "keyword" },
+        "hostname": { "type": "keyword" },
+        "ip_current": { "type": "ip" },
+        "ip_history": {
+          "type": "nested",
+          "properties": {
+            "ip": { "type": "ip" },
+            "from": { "type": "date" },
+            "to": { "type": "date" }
+          }
+        },
+        "protocols_seen": { "type": "keyword" },
+        "open_ports": { "type": "integer" },
+        "sector": { "type": "keyword" },
+        "type": { "type": "keyword" },
+        "last_seen": { "type": "date" },
+        "status": { "type": "keyword" }
+      }
+    }
+  }
+}

@@ -1,0 +1,25 @@
+title: Mass VM deletion via hypervisor API (ransomware / sabotage pattern)
+id: 8c4e1f90-7a2b-4d33-9e55-6f1b2c3a4d03
+status: stable
+description: >
+  5+ VM/datastore delete operations via the hypervisor API within 120 seconds.
+  Classic destructive pattern in a data center.
+level: critical
+logsource:
+  category: api_activity
+detection:
+  vm_delete:
+    class_uid: 6003
+    activity_id: 4
+  dc:
+    siem.sector: datacenter
+  condition: vm_delete and dc
+fields:
+  - actor.user.name
+  - src_endpoint.ip
+siem:
+  sector: datacenter
+  score_weight: 85
+  window_seconds: 120
+  threshold: 5
+  group_by: actor.user.name

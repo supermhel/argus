@@ -1,0 +1,3 @@
+# WS-3 Indexer. Core skeleton is stdlib-only (urllib OpenSearch client).
+# Production extras:
+#   redis>=5.0   # bus backend (BUS_BACKEND=redis)

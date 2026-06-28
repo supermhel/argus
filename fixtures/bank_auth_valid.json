@@ -1,0 +1,19 @@
+{
+  "metadata": {
+    "version": "1.1.0",
+    "product": { "name": "Active Directory", "vendor_name": "Microsoft" },
+    "logged_time": 1750000000123,
+    "original_format": "winevent"
+  },
+  "class_uid": 3002,
+  "category_uid": 3,
+  "activity_id": 4,
+  "type_uid": 300204,
+  "severity_id": 4,
+  "time": 1750000000000,
+  "status": "Failure",
+  "message": "Failed logon for user jdoe from 10.20.30.40",
+  "src_endpoint": { "ip": "10.20.30.40", "mac": "AA:BB:CC:DD:EE:01", "hostname": "wks-jdoe" },
+  "actor": { "user": { "name": "jdoe", "domain": "BANKCORP" } },
+  "siem": { "sector": "bank", "source_type": "active_directory", "ingest_id": "11111111-1111-1111-1111-111111111111" }
+}

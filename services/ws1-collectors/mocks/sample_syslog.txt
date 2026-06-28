@@ -1,0 +1,5 @@
+<134>1 2024-06-16T12:00:00.000Z fw-edge-01 asa 4521 - - %ASA-4-106023: Deny tcp src outside:203.0.113.5/51000 dst inside:10.0.0.10/22 by access-group acl_out
+<38>1 2024-06-16T12:00:01.250Z wks-jdoe sshd 1832 - - Failed password for jdoe from 10.20.30.40 port 51514 ssh2
+<13>1 2024-06-16T12:00:02.500Z 10.0.0.50 nginx 9001 - - 10.0.0.50 GET /login 200
+<86>1 2024-06-16T12:00:03.750Z db-oracle-02 oracled 4410 - - AUDIT: user SCOTT executed privileged op DROP TABLE
+this is not a valid rfc5424 line and should still be captured as raw

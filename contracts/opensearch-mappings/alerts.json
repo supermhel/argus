@@ -1,0 +1,29 @@
+{
+  "index_patterns": ["alerts-*"],
+  "_comment": "Correlated/enriched alerts, 1-year ILM.",
+  "template": {
+    "settings": { "number_of_shards": 1, "number_of_replicas": 1, "index.lifecycle.name": "alerts-365d" },
+    "mappings": {
+      "dynamic": "false",
+      "properties": {
+        "alert_id": { "type": "keyword" },
+        "time": { "type": "date", "format": "epoch_millis" },
+        "rule_id": { "type": "keyword" },
+        "rule_title": { "type": "keyword" },
+        "level": { "type": "keyword" },
+        "score": { "type": "integer" },
+        "sector": { "type": "keyword" },
+        "src_endpoint": { "properties": { "ip": { "type": "ip" }, "mac": { "type": "keyword" } } },
+        "actor": { "properties": { "user": { "properties": { "name": { "type": "keyword" } } } } },
+        "event_ids": { "type": "keyword" },
+        "ai": {
+          "properties": {
+            "verdict": { "type": "keyword" },
+            "summary": { "type": "text" },
+            "level": { "type": "keyword" }
+          }
+        }
+      }
+    }
+  }
+}

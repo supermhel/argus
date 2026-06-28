@@ -1,0 +1,23 @@
+title: Authentication brute-force from single source
+id: 6f1c8a2e-0d3b-4c11-9a21-7b5e2f9a1c01
+status: stable
+description: >
+  10+ failed authentications from the same source IP within 60 seconds.
+  Works for any source mapped to OCSF Authentication (AD, LDAP, RADIUS, SSH).
+level: high
+logsource:
+  category: authentication
+detection:
+  failed_auth:
+    class_uid: 3002
+    activity_id: 4
+  condition: failed_auth
+fields:
+  - src_endpoint.ip
+  - actor.user.name
+siem:
+  sector: common
+  score_weight: 70
+  window_seconds: 60
+  threshold: 10
+  group_by: src_endpoint.ip

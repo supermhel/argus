@@ -1,0 +1,224 @@
+# ARGUS
+
+**An open-source SIEM pipeline that turns raw security logs into real alerts — with a decoupled, contract-first architecture you can extend one parser at a time.**
+
+ARGUS ingests logs from multiple sources, normalizes them to a single schema
+([OCSF](https://schema.ocsf.io/)), runs correlation rules over a sliding window,
+and surfaces alerts in a dashboard. Every service is independent and talks to the
+rest of the system only through a message bus, so you can scale or replace any
+piece without rewriting the others.
+
+---
+
+## What's real in v0.1
+
+ARGUS v0.1 ships a **working detection pipeline**. We are deliberate about what is
+real versus what is planned — this is a security tool, so accuracy matters more than
+a long feature list.
+
+| Capability | Status | Notes |
+|---|---|---|
+| **Detection pipeline** (collect → normalize → detect → index → dashboard) | ✅ Works | End-to-end, this is the v0.1 product |
+| **Cisco ASA parser** | ✅ Works | Syslog `%ASA` → OCSF |
+| **Active Directory parser** | ✅ Works | Windows EventID 4625 etc. → OCSF |
+| **VMware vSphere parser** | ✅ Works | vCenter operations → OCSF |
+| **Linux SSH parser** | ✅ Works | `sshd` "Failed password" → OCSF Authentication |
+| **Brute-force detection rule** | ✅ Works | 10 failed auth from one IP in 60s |
+| **OCSF normalization + dashboard** | ✅ Works | Single internal schema; alert list in the dashboard |
+| Generic syslog parser | 🚧 v0.2 | Deferred — [good first issue](CONTRIBUTING.md) |
+| SNMP parser | 🚧 v0.2 | Deferred |
+| NetFlow parser | 🚧 v0.2 | Deferred (binary format) |
+| Windows Event Log parser | 🚧 v0.2 | Deferred |
+| Custom JSON parser | 🚧 v0.2 | Deferred |
+| **AI triage** (local Ollama/Qwen) | 🚧 v0.2 | **WS-5 is a passthrough stub in v0.1 — it does NOT classify with AI yet.** Real local-LLM triage lands in v0.2. |
+
+> **No AI required, no AI claimed.** In v0.1 the "AI" service (WS-5) is a documented
+> passthrough stub. The pipeline produces real alerts without it. Local LLM triage is
+> the v0.2 headline.
+
+---
+
+## Prerequisites
+
+- **Docker Desktop** (or Docker Engine + Compose v2) with **≥ 4 GB RAM** allocated to Docker.
+- **OS:** Linux, macOS, or **Windows via WSL2**. (The demo stack runs Linux containers; the
+  pre-flight and demo scripts are POSIX `sh`.)
+- **Python 3** — only if you want to run the contract tests or contribute a parser.
+  You do **not** need Docker to add a parser (see [Contributing](#contributing)).
+
+---
+
+## ⚠️ PRE-FLIGHT — read this before you start the stack
+
+OpenSearch (the storage engine) **will not boot** on Linux/WSL2 with default kernel
+settings. It needs the `vm.max_map_count` limit raised. Run this **once per machine**
+(it resets on reboot):
+
+```sh
+sudo sysctl -w vm.max_map_count=262144
+```
+
+To make it persist across reboots:
+
+```sh
+echo 'vm.max_map_count=262144' | sudo tee /etc/sysctl.d/99-argus.conf
+```
+
+> On **macOS with Docker Desktop** this is handled inside the Docker VM and you can
+> usually skip it. On **Linux/WSL2** it is required — without it you get a JVM crash,
+> not a helpful error.
+
+`make preflight` (below) checks this for you and prints the exact fix if anything is
+missing.
+
+---
+
+## Quick start
+
+```sh
+# 1. Check your machine is ready (vm.max_map_count, Docker RAM, free ports)
+make preflight
+
+# 2. Bring up the full stack
+make demo
+```
+
+`make demo` runs the pre-flight check, then starts every service with Docker Compose.
+All services are long-running daemons with a `/health` endpoint and a restart policy.
+
+> **Want to see ARGUS work without Docker?** Run **`make e2e`** — a zero-infra
+> acceptance test that feeds a real SSH brute-force burst through the whole pipeline
+> and shows the alert come out the other end (details in
+> [How to see the alert](#how-to-see-the-alert)).
+>
+> **Honest status:** the *in-stack* live feeder and the *live* dashboard (which reads
+> alerts straight from OpenSearch) are the remaining DX2/DX4 items — see
+> [the build plan](docs/superpowers/specs/2026-06-27-argus-v0.1-build-plan.md). The
+> end-to-end detection logic itself is proven today by `make e2e`.
+
+Other handy targets:
+
+```sh
+make e2e      # zero-infra ACCEPTANCE test: SSH brute-force -> real alert (no Docker)
+make test     # run the full zero-infra contract test suite (no Docker needed)
+make up       # start the stack detached (docker compose up -d)
+make down     # stop the stack and remove volumes
+```
+
+---
+
+## Ports
+
+| Port | Service | What it is |
+|------|---------|------------|
+| 6379 | `redis` (`siem-bus`) | Message bus between services |
+| 9200 | `opensearch` (`siem-store`) | Event/alert storage + query API |
+| 5601 | `dashboards` (`siem-dashboards`) | OpenSearch Dashboards |
+| 8000 | `ws6-inventory` | Inventory API (IP/MAC history) |
+| 8080 | `ws7-dashboard` | ARGUS alert console |
+
+`make preflight` checks all of these are free before you start.
+
+---
+
+## How to see the alert
+
+The acceptance test for v0.1 is a real **brute-force alert**, not mock data:
+
+1. **The signal.** 10 failed authentication events from a single source IP within
+   60 seconds. ARGUS produces these from a Linux SSH `Failed password` line or a
+   Windows `EventID 4625` — both normalize to the same OCSF Authentication event
+   (`class_uid: 3002`, `activity_id: 4`).
+2. **The rule.** [`contracts/rules/common_bruteforce.yml`](contracts/rules/common_bruteforce.yml)
+   matches those events, grouped by `src_endpoint.ip`, with `threshold: 10` and
+   `window_seconds: 60`. It is source-agnostic, so it fires identically on SSH or AD.
+3. **The alert.** When the 10th failure from one IP lands inside the window, the
+   detection service emits an alert that flows to the indexer and into the dashboard
+   alert list.
+
+See the **whole pipeline** produce the alert with **no infrastructure** — the
+acceptance test injects 10 failed SSH logins and asserts a real brute-force alert
+reaches the index, and that replaying the same event reuses the same alert id
+(idempotent, so at-least-once delivery never double-alerts):
+
+```sh
+make e2e        # or: python tools/demo_e2e.py
+```
+
+Expected tail:
+
+```
+  ALERT: Authentication brute-force from single source src=203.0.113.5 score=70 id=...
+  T7 OK: replay reused alert_id ... -> deduped (alerts count stayed 2)
+[OK] ARGUS v0.1 acceptance: SSH brute-force -> real alert in the index, idempotent under replay. Zero infra.
+```
+
+Prefer a unit-level check? The WS-4 detection contract test asserts the rule fires on
+the 10th attempt: `cd services/ws4-detection && python test_contract.py`.
+
+For the full Dockerized stack (collect → normalize → detect → index → dashboard), run
+`make demo` and open the dashboard at <http://localhost:8080>.
+
+---
+
+## Architecture
+
+```
+WS-1 Collectors ─raw.events─▶ WS-2 Normalization ─normalized.events─┬─▶ WS-3 Indexer ─▶ OpenSearch
+   (Cisco ASA / AD /          (parsers → OCSF)                      ├─▶ WS-6 Inventory (IP/MAC)
+    VMware / Linux SSH)                                             └─▶ WS-4 Detection ─scored.events─▶ WS-3
+                                                                          │  alerts ─▶ WS-3 / WS-7
+                                                                          └─ai.requests─▶ WS-5 AI (stub) ─▶ WS-3/WS-7
+WS-7 Dashboard ◀── WS-6 API + alerts
+```
+
+The **only** coupling between services is the message bus. Everything else is a frozen
+contract under [`contracts/`](contracts/). All source-format heterogeneity is absorbed
+at the edge (one parser per source in WS-2); the interior of the system handles a single
+schema (OCSF).
+
+| WS | Service | Role | v0.1 status |
+|----|---------|------|-------------|
+| 1 | `services/ws1-collectors` | Collect logs → `raw.events` | ✅ |
+| 2 | `services/ws2-normalization` | Parsers → validated OCSF events | ✅ (4 parsers) |
+| 3 | `services/ws3-indexer` | Routing + OpenSearch indexing (idempotent) | ✅ |
+| 4 | `services/ws4-detection` | Correlation rules + scoring + windowing | ✅ |
+| 5 | `services/ws5-ai` | Triage | 🚧 passthrough stub (AI in v0.2) |
+| 6 | `services/ws6-inventory` | IP/MAC inventory API (SQLite) | ✅ |
+| 7 | `services/ws7-dashboard` | Alert console | ✅ |
+
+For the full design, scope decisions, and roadmap, see
+[the v0.1 build plan](docs/superpowers/specs/2026-06-27-argus-v0.1-build-plan.md) and
+[`docs/PHASE0_README.md`](docs/PHASE0_README.md).
+
+---
+
+## Contributing
+
+The fastest way to contribute is to **add a parser** — and you do **not** need Docker
+or OpenSearch to do it. The whole inner loop is one command:
+
+```sh
+cd services/ws2-normalization && python test_contract.py
+```
+
+See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the contribution workflow and
+**[docs/adding-a-parser.md](docs/adding-a-parser.md)** for a step-by-step walkthrough
+(copy `linux_ssh.py`, make three small edits, verify). The five deferred parsers above
+are the obvious first PRs.
+
+---
+
+## Security
+
+ARGUS v0.1 services are designed for a **localhost / Docker-Compose network only** and
+are **not** hardened for internet exposure. There is **no authentication in v0.1 by
+design**, and the detection engine executes rule files — so only run rules you trust.
+See **[SECURITY.md](SECURITY.md)** for the full threat boundary and how to report a
+vulnerability.
+
+---
+
+## License
+
+ARGUS is licensed under the **Apache License 2.0**. See [LICENSE](LICENSE).

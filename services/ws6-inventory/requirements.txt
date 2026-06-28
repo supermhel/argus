@@ -1,0 +1,5 @@
+# WS-6 Inventory. Core skeleton is stdlib-only (sqlite3 + http.server).
+# Production wrap of the same InventoryStore:
+#   fastapi>=0.110
+#   uvicorn>=0.29
+#   redis>=5.0   # to also consume assets.updates from the bus

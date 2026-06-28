@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local data / runtime
+inventory-data/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Secrets / local env (never commit)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

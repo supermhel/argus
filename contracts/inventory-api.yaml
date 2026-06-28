@@ -1,0 +1,100 @@
+openapi: 3.1.0
+info:
+  title: SIEM Inventory API (Contract C)
+  version: "1.0.0"
+  description: >
+    Asset inventory keyed by MAC (stable). IP is historised because it changes (DHCP).
+    Implemented by WS-6, consumed by WS-2 (enrichment) and WS-7 (dashboard).
+servers:
+  - url: http://inventory:8000
+paths:
+  /assets:
+    get:
+      summary: List / search assets
+      parameters:
+        - { name: ip, in: query, schema: { type: string } }
+        - { name: mac, in: query, schema: { type: string } }
+        - { name: sector, in: query, schema: { type: string, enum: [bank, datacenter, common] } }
+        - { name: status, in: query, schema: { type: string, enum: [active, inactive] } }
+        - { name: limit, in: query, schema: { type: integer, default: 50 } }
+      responses:
+        "200":
+          description: matching assets
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Asset" }
+  /assets/resolve:
+    get:
+      summary: Resolve which MAC held an IP at a given time (historically correct)
+      parameters:
+        - { name: ip, in: query, required: true, schema: { type: string } }
+        - { name: at, in: query, required: true, schema: { type: string, format: date-time } }
+      responses:
+        "200":
+          description: the asset that owned the IP at that instant
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Asset" }
+        "404": { description: no asset held that IP at that time }
+  /assets/{mac}:
+    get:
+      summary: Get one asset by MAC
+      parameters:
+        - { name: mac, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Asset" }
+        "404": { description: not found }
+  /assets/upsert:
+    post:
+      summary: Upsert from an observation (bus consumer also calls this internally)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Observation" }
+      responses:
+        "200": { description: upserted, returns the asset, content: { application/json: { schema: { $ref: "#/components/schemas/Asset" } } } }
+components:
+  schemas:
+    IpInterval:
+      type: object
+      required: [ip, from]
+      properties:
+        ip: { type: string }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time, nullable: true }
+    Asset:
+      type: object
+      required: [mac, last_seen, status]
+      properties:
+        mac: { type: string, description: "primary logical key" }
+        vendor: { type: string }
+        hostname: { type: string }
+        ip_current: { type: string, nullable: true }
+        ip_history:
+          type: array
+          items: { $ref: "#/components/schemas/IpInterval" }
+        protocols_seen:
+          type: array
+          items: { type: string }
+        open_ports:
+          type: array
+          items: { type: integer }
+        sector: { type: string, enum: [bank, datacenter, common] }
+        type: { type: string, description: "router, switch, server, vm, hypervisor, db, medical, plc" }
+        last_seen: { type: string, format: date-time }
+        status: { type: string, enum: [active, inactive] }
+    Observation:
+      type: object
+      required: [mac, ip, seen_at]
+      properties:
+        mac: { type: string }
+        ip: { type: string }
+        hostname: { type: string }
+        protocol: { type: string }
+        seen_at: { type: string, format: date-time }

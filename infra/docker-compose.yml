@@ -1,0 +1,110 @@
+# Phase 0 dev infrastructure: message bus + storage + provisioning.
+# Service containers (WS-1..WS-7) are added by each workstream skeleton.
+version: "3.8"
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: siem-bus
+    ports: ["6379:6379"]
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  opensearch:
+    image: opensearchproject/opensearch:2.13.0
+    container_name: siem-store
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - DISABLE_SECURITY_PLUGIN=true
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+    ports: ["9200:9200"]
+    volumes: ["os-data:/usr/share/opensearch/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  dashboards:
+    image: opensearchproject/opensearch-dashboards:2.13.0
+    container_name: siem-dashboards
+    environment:
+      - 'OPENSEARCH_HOSTS=["http://opensearch:9200"]'
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+    ports: ["5601:5601"]
+    depends_on:
+      opensearch: { condition: service_healthy }
+
+  provision:
+    image: curlimages/curl:8.7.1
+    container_name: siem-provision
+    depends_on:
+      opensearch: { condition: service_healthy }
+    volumes:
+      - ../contracts/opensearch-mappings:/mappings:ro
+      - ./provision.sh:/provision.sh:ro
+    entrypoint: ["sh", "/provision.sh"]
+    restart: "no"
+
+  # ---- workstream services (build context = repo root) ----
+  ws1-collectors:
+    build: { context: .., dockerfile: services/ws1-collectors/Dockerfile }
+    restart: unless-stopped
+    environment: [BUS_BACKEND=redis, REDIS_URL=redis://redis:6379/0]
+    depends_on: { redis: { condition: service_healthy } }
+
+  ws2-normalization:
+    build: { context: .., dockerfile: services/ws2-normalization/Dockerfile }
+    restart: unless-stopped
+    environment: [BUS_BACKEND=redis, REDIS_URL=redis://redis:6379/0]
+    depends_on: { redis: { condition: service_healthy } }
+
+  ws3-indexer:
+    build: { context: .., dockerfile: services/ws3-indexer/Dockerfile }
+    restart: unless-stopped
+    environment:
+      - BUS_BACKEND=redis
+      - REDIS_URL=redis://redis:6379/0
+      - STORAGE_BACKEND=opensearch
+      - OPENSEARCH_URL=http://opensearch:9200
+    depends_on:
+      redis: { condition: service_healthy }
+      opensearch: { condition: service_healthy }
+
+  ws4-detection:
+    build: { context: .., dockerfile: services/ws4-detection/Dockerfile }
+    restart: unless-stopped
+    environment: [BUS_BACKEND=redis, REDIS_URL=redis://redis:6379/0]
+    depends_on: { redis: { condition: service_healthy } }
+
+  ws5-ai:
+    build: { context: .., dockerfile: services/ws5-ai/Dockerfile }
+    restart: unless-stopped
+    environment: [BUS_BACKEND=redis, REDIS_URL=redis://redis:6379/0]
+    depends_on: { redis: { condition: service_healthy } }
+    # set OLLAMA_URL to enable the local LLM; otherwise StubLLM
+
+  ws6-inventory:
+    build: { context: .., dockerfile: services/ws6-inventory/Dockerfile }
+    restart: unless-stopped
+    ports: ["8000:8000"]
+    volumes: ["inventory-data:/data"]
+
+  ws7-dashboard:
+    build: { context: .., dockerfile: services/ws7-dashboard/Dockerfile }
+    restart: unless-stopped
+    ports: ["8080:80"]
+    depends_on: [ws6-inventory]
+
+volumes:
+  redis-data:
+  os-data:
+  inventory-data:

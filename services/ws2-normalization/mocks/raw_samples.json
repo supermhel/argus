@@ -1,0 +1,25 @@
+{
+  "_comment": "Raw bus payloads (raw.events shape) for each parser, used by main.py demo and contract test.",
+  "samples": [
+    {
+      "source_type": "cisco_asa",
+      "raw": "%ASA-4-106023: Deny tcp src outside:203.0.113.5/51000 dst inside:10.0.0.10/22 by access-group acl_out",
+      "meta": { "ip": "203.0.113.5", "received_at": 1750000200000 }
+    },
+    {
+      "source_type": "active_directory",
+      "raw": { "EventID": 4625, "TimeCreated": 1750000000000, "TargetUserName": "jdoe", "TargetDomainName": "BANKCORP", "IpAddress": "10.20.30.40", "WorkstationName": "wks-jdoe", "MacAddress": "AA:BB:CC:DD:EE:01" },
+      "meta": { "ip": "10.20.30.40", "received_at": 1750000000000 }
+    },
+    {
+      "source_type": "vmware_vsphere",
+      "raw": { "operation": "VM.Delete", "vm": "prod-db-07", "userName": "svc_orchestrator", "host": "vcenter-01", "ipAddress": "172.16.5.9", "port": 443, "createdTime": 1750000100000 },
+      "meta": { "ip": "172.16.5.9", "received_at": 1750000100000 }
+    },
+    {
+      "source_type": "linux_ssh",
+      "raw": "Jun 10 13:55:36 db01 sshd[2154]: Failed password for invalid user admin from 203.0.113.5 port 51000 ssh2",
+      "meta": { "ip": "203.0.113.5", "received_at": 1750000300000 }
+    }
+  ]
+}

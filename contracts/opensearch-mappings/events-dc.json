@@ -1,0 +1,28 @@
+{
+  "index_patterns": ["events-dc-*"],
+  "_comment": "Same field mappings as events-common; data-center events, 90d ILM.",
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 1,
+      "index.lifecycle.name": "events-90d"
+    },
+    "mappings": {
+      "dynamic": "false",
+      "properties": {
+        "time": { "type": "date", "format": "epoch_millis" },
+        "class_uid": { "type": "integer" },
+        "category_uid": { "type": "integer" },
+        "activity_id": { "type": "integer" },
+        "type_uid": { "type": "integer" },
+        "severity_id": { "type": "integer" },
+        "status": { "type": "keyword" },
+        "message": { "type": "text" },
+        "src_endpoint": { "properties": { "ip": { "type": "ip" }, "mac": { "type": "keyword" }, "hostname": { "type": "keyword" }, "port": { "type": "integer" } } },
+        "dst_endpoint": { "properties": { "ip": { "type": "ip" }, "mac": { "type": "keyword" }, "hostname": { "type": "keyword" }, "port": { "type": "integer" } } },
+        "actor": { "properties": { "user": { "properties": { "name": { "type": "keyword" }, "uid": { "type": "keyword" }, "domain": { "type": "keyword" } } } } },
+        "siem": { "properties": { "sector": { "type": "keyword" }, "source_type": { "type": "keyword" }, "ingest_id": { "type": "keyword" }, "tenant": { "type": "keyword" }, "score": { "type": "integer" } } }
+      }
+    }
+  }
+}

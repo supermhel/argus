@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SIEM — Console</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --border:#30363d; --txt:#e6edf3; --muted:#8b949e;
+    --crit:#f85149; --high:#db8e1a; --med:#d29922; --low:#3fb950; --accent:#388bfd;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--txt)}
+  header{display:flex;align-items:center;gap:16px;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--panel)}
+  header h1{font-size:16px;margin:0;font-weight:600}
+  nav{display:flex;gap:4px;margin-left:auto}
+  nav button{background:transparent;color:var(--muted);border:1px solid transparent;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px}
+  nav button.active{color:var(--txt);background:var(--bg);border-color:var(--border)}
+  main{padding:20px;max-width:1200px;margin:0 auto}
+  .view{display:none}.view.active{display:block}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px}
+  .card .n{font-size:28px;font-weight:700}.card .l{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px}
+  th{color:var(--muted);font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:.04em}
+  tr:last-child td{border-bottom:none} tr.clk{cursor:pointer} tr.clk:hover{background:#1c2330}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}
+  .crit{background:rgba(248,81,73,.15);color:var(--crit)} .high{background:rgba(219,142,26,.15);color:var(--high)}
+  .med{background:rgba(210,153,34,.15);color:var(--med)} .low{background:rgba(63,185,80,.15);color:var(--low)}
+  .toolbar{display:flex;gap:8px;margin-bottom:12px}
+  input,select{background:var(--bg);border:1px solid var(--border);color:var(--txt);padding:7px 10px;border-radius:6px;font-size:13px}
+  .detail{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:18px;margin-top:14px}
+  .detail h3{margin:0 0 10px} .kv{display:grid;grid-template-columns:140px 1fr;gap:4px 12px;font-size:13px}
+  .kv .k{color:var(--muted)} .bar{height:18px;background:var(--bg);border:1px solid var(--border);border-radius:4px;overflow:hidden}
+  .bar>span{display:block;height:100%;background:var(--accent)} .src{display:flex;align-items:center;gap:10px;margin:8px 0}
+  .src .lbl{width:90px;color:var(--muted)} .muted{color:var(--muted)} a{color:var(--accent);cursor:pointer}
+</style>
+</head>
+<body>
+<header>
+  <h1>🛡️ SIEM Console</h1>
+  <span class="muted" id="apiStatus">mock data</span>
+  <nav>
+    <button data-view="global" class="active">Vue globale</button>
+    <button data-view="inventory">Inventaire</button>
+    <button data-view="sources">Sources</button>
+  </nav>
+</header>
+<main>
+  <!-- LEVEL 1 -->
+  <section id="global" class="view active">
+    <div class="cards" id="globalCards"></div>
+    <h3>Alertes critiques en cours</h3>
+    <table><thead><tr><th>Heure</th><th>Règle</th><th>Secteur</th><th>Niveau</th><th>Score</th><th>Source</th></tr></thead>
+      <tbody id="alertRows"></tbody></table>
+  </section>
+
+  <!-- LEVEL 2 -->
+  <section id="inventory" class="view">
+    <div class="toolbar">
+      <input id="q" placeholder="Filtrer par IP ou MAC…" />
+      <select id="sector"><option value="">Tous secteurs</option><option>bank</option><option>datacenter</option><option>common</option></select>
+    </div>
+    <table><thead><tr><th>MAC</th><th>Hostname</th><th>IP actuelle</th><th>Secteur</th><th>Type</th><th>Statut</th></tr></thead>
+      <tbody id="assetRows"></tbody></table>
+    <div id="assetDetail"></div>
+  </section>
+
+  <!-- LEVEL 3 -->
+  <section id="sources" class="view">
+    <h3>Événements par protocole / source</h3>
+    <div id="srcBars"></div>
+  </section>
+</main>
+
+<script src="mocks/mock_data.js"></script>
+<script>
+// ---- data access: live API if configured, else mock --------------------
+const INVENTORY_API = window.INVENTORY_API || null; // e.g. "http://localhost:8000"
+async function getAssets(){
+  if(INVENTORY_API){ try{ return await (await fetch(INVENTORY_API+"/assets?limit=200")).json(); }catch(e){} }
+  return window.SIEM_MOCK.assets;
+}
+function getAlerts(){ return window.SIEM_MOCK.alerts; }
+function getSources(){ return window.SIEM_MOCK.sources; }
+const lvl = s => ({critical:"crit",high:"high",medium:"med",low:"low"}[s]||"low");
+
+// ---- nav ----
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll("nav button").forEach(x=>x.classList.remove("active"));
+  document.querySelectorAll(".view").forEach(x=>x.classList.remove("active"));
+  b.classList.add("active"); document.getElementById(b.dataset.view).classList.add("active");
+});
+
+// ---- LEVEL 1: global ----
+function renderGlobal(){
+  const assets = window.SIEM_MOCK.assets, alerts = getAlerts();
+  const active = assets.filter(a=>a.status==="active").length;
+  const crit = alerts.filter(a=>a.level==="critical").length;
+  document.getElementById("globalCards").innerHTML = [
+    ["Appareils actifs", active],["Appareils inactifs", assets.length-active],
+    ["Alertes critiques", crit],["Alertes totales", alerts.length]
+  ].map(([l,n])=>`<div class="card"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("");
+  document.getElementById("alertRows").innerHTML = alerts.sort((a,b)=>b.score-a.score).map(a=>`
+    <tr><td class="muted">${new Date(a.time).toLocaleTimeString()}</td>
+    <td>${a.rule_title}</td><td>${a.sector||""}</td>
+    <td><span class="pill ${lvl(a.level)}">${a.level}</span></td>
+    <td>${a.score}</td><td class="muted">${(a.src_endpoint||{}).ip||""}</td></tr>`).join("");
+}
+
+// ---- LEVEL 2: inventory ----
+let ALL=[];
+async function renderInventory(){
+  ALL = await getAssets(); drawAssets(ALL);
+}
+function drawAssets(list){
+  document.getElementById("assetRows").innerHTML = list.map((a,i)=>`
+    <tr class="clk" data-i="${i}"><td>${a.mac}</td><td>${a.hostname||""}</td>
+    <td>${a.ip_current||""}</td><td>${a.sector||""}</td><td>${a.type||""}</td>
+    <td><span class="pill ${a.status==='active'?'low':'med'}">${a.status}</span></td></tr>`).join("");
+  document.querySelectorAll("#assetRows tr").forEach(tr=>tr.onclick=()=>showAsset(list[+tr.dataset.i]));
+}
+function showAsset(a){
+  const hist = (a.ip_history||[]).map(h=>`<tr><td>${h.ip}</td><td class="muted">${h.from}</td><td class="muted">${h.to||"actuel"}</td></tr>`).join("")||"<tr><td colspan=3 class=muted>—</td></tr>";
+  document.getElementById("assetDetail").innerHTML = `<div class="detail">
+    <h3>${a.hostname||a.mac} <span class="muted">(${a.mac})</span></h3>
+    <div class="kv"><div class="k">IP actuelle</div><div>${a.ip_current||"—"}</div>
+    <div class="k">Secteur</div><div>${a.sector||"—"}</div>
+    <div class="k">Type</div><div>${a.type||"—"}</div>
+    <div class="k">Protocoles</div><div>${(a.protocols_seen||[]).join(", ")||"—"}</div>
+    <div class="k">Vu pour la dernière fois</div><div>${a.last_seen||"—"}</div></div>
+    <h3 style="margin-top:16px">Historique IP</h3>
+    <table><thead><tr><th>IP</th><th>Depuis</th><th>Jusqu'à</th></tr></thead><tbody>${hist}</tbody></table></div>`;
+}
+function applyFilter(){
+  const q=document.getElementById("q").value.trim().toLowerCase();
+  const sec=document.getElementById("sector").value;
+  drawAssets(ALL.filter(a=>
+    (!sec||a.sector===sec) &&
+    (!q || (a.ip_current||"").toLowerCase().includes(q) || a.mac.toLowerCase().includes(q))));
+}
+document.getElementById("q").oninput=applyFilter;
+document.getElementById("sector").onchange=applyFilter;
+
+// ---- LEVEL 3: sources ----
+function renderSources(){
+  const s=getSources(), max=Math.max(...Object.values(s));
+  document.getElementById("srcBars").innerHTML = Object.entries(s).map(([k,v])=>`
+    <div class="src"><div class="lbl">${k}</div>
+    <div class="bar" style="flex:1"><span style="width:${(v/max*100).toFixed(1)}%"></span></div>
+    <div style="width:60px;text-align:right">${v.toLocaleString()}</div></div>`).join("");
+}
+
+renderGlobal(); renderInventory(); renderSources();
+</script>
+</body>
+</html>

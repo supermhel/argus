@@ -1,0 +1,4 @@
+# WS-1 Collectors. Core skeleton is stdlib-only.
+# Production extras (not needed for the contract test):
+#   pysnmp>=5.0      # real SNMP polling
+#   redis>=5.0       # bus backend (BUS_BACKEND=redis)

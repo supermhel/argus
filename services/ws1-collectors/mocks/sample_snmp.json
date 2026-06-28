@@ -1,0 +1,23 @@
+{
+  "_comment": "Mock SNMP poll responses. Mirrors what an SNMP GET/WALK returns per device. OIDs: 1.3.6.1.2.1.1.5.0 = sysName, 1.3.6.1.2.1.2.2.1.6 = ifPhysAddress (MAC).",
+  "devices": [
+    {
+      "ip": "10.0.0.1",
+      "community": "public",
+      "oids": {
+        "1.3.6.1.2.1.1.5.0": "core-switch-01",
+        "1.3.6.1.2.1.2.2.1.6": "AA:BB:CC:00:11:01",
+        "1.3.6.1.2.1.1.3.0": "1203456700"
+      }
+    },
+    {
+      "ip": "10.0.0.2",
+      "community": "public",
+      "oids": {
+        "1.3.6.1.2.1.1.5.0": "edge-router-02",
+        "1.3.6.1.2.1.2.2.1.6": "AA:BB:CC:00:11:02",
+        "1.3.6.1.2.1.1.3.0": "1203456712"
+      }
+    }
+  ]
+}
