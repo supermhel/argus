@@ -69,9 +69,13 @@ class Handler(BaseHTTPRequestHandler):
 
 def serve(host="0.0.0.0", port=8000):
     srv = ThreadingHTTPServer((host, port), Handler)
-    sys.path.insert(0, str(HERE.parent))  # for `shared`
-    from shared.log import get_logger  # noqa: E402
-    get_logger("ws6-inventory").info("listening", url=f"http://{host}:{port}")
+    # ws6 is a standalone service; its image does NOT bundle `shared`, so emit a
+    # structured JSON log line inline rather than importing shared.log.
+    import json as _json
+    import time as _time
+    print(_json.dumps({"ts": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+                       "level": "info", "service": "ws6-inventory",
+                       "msg": "listening", "url": f"http://{host}:{port}"}), flush=True)
     srv.serve_forever()
 
 

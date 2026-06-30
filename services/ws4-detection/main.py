@@ -20,8 +20,17 @@ from shared.bus import Bus  # noqa: E402
 from engine import load_rules  # noqa: E402
 from scoring import Scorer  # noqa: E402
 
-RULES_DIR = ROOT / "contracts" / "rules"
-SCORING_YAML = ROOT / "contracts" / "scoring.yaml"
+# contracts/ lives at repo/contracts (host) or /app/contracts (container). HERE.parent
+# is repo/services (host) or /app (container), so search both it and its parent.
+def _contracts_dir() -> Path:
+    for base in (SERVICES, ROOT):
+        if (base / "contracts" / "scoring.yaml").exists():
+            return base / "contracts"
+    return ROOT / "contracts"
+
+_CONTRACTS = _contracts_dir()
+RULES_DIR = _CONTRACTS / "rules"
+SCORING_YAML = _CONTRACTS / "scoring.yaml"
 
 
 class Detector:

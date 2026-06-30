@@ -3,9 +3,14 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# Reuse the single source-of-truth validator in tools/.
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "tools"))
+# Reuse the single source-of-truth validator in tools/. Resolve its location for
+# BOTH the repo layout (repo/services/shared -> repo/tools, parents[2]) and the
+# container layout (/app/shared -> /app/tools, parents[1]).
+_here = Path(__file__).resolve()
+for _cand in (_here.parents[2] / "tools", _here.parents[1] / "tools", Path("/app/tools")):
+    if (_cand / "validate_contract.py").exists():
+        sys.path.insert(0, str(_cand))
+        break
 from validate_contract import load, validate_event, SCHEMA_PATH  # noqa: E402
 
 _SCHEMA = load(SCHEMA_PATH)
