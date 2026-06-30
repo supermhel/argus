@@ -15,10 +15,7 @@ piece without rewriting the others.
 See ARGUS turn a real SSH brute-force burst into a real alert — **with zero
 infrastructure** (no Docker, no Redis, no OpenSearch):
 
-<!-- Demo cast coming soon. Record it with: asciinema rec --command "bash tools/demo.sh" argus-demo.cast
-     then: asciinema upload argus-demo.cast  — paste the returned id below and uncomment.
-[![asciicast](https://asciinema.org/a/PLACEHOLDER.svg)](https://asciinema.org/a/PLACEHOLDER)
--->
+[![asciicast](https://asciinema.org/a/OORTESTMdagRX7HI.svg)](https://asciinema.org/a/OORTESTMdagRX7HI)
 
 The cast above runs [`tools/demo.sh`](tools/demo.sh): it feeds 10 failed SSH logins
 from one IP through the whole pipeline (normalize → detect → triage → index),
