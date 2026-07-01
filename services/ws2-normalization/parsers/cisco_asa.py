@@ -24,12 +24,15 @@ from .base import Parser, SEV_MEDIUM, SEV_INFO
 # Cisco ASA syslog tag: %ASA-<sev>-<msgid>: <text>
 _ASA_TAG = re.compile(r"%ASA-(?P<sev>\d)-(?P<msgid>\d+):\s*(?P<text>.*)$")
 
-# src/dst as zone:ip/port pairs, e.g. "src outside:203.0.113.5/51000 dst inside:10.0.0.10/22"
-_SRC = re.compile(r"src\s+\S*?:?(?P<ip>\d{1,3}(?:\.\d{1,3}){3})/(?P<port>\d+)")
-_DST = re.compile(r"dst\s+\S*?:?(?P<ip>\d{1,3}(?:\.\d{1,3}){3})/(?P<port>\d+)")
-# "Built ... for outside:IP/port (..) to inside:IP/port"
-_FOR = re.compile(r"for\s+\S+?:(?P<ip>\d{1,3}(?:\.\d{1,3}){3})/(?P<port>\d+)")
-_TO = re.compile(r"to\s+\S+?:(?P<ip>\d{1,3}(?:\.\d{1,3}){3})/(?P<port>\d+)")
+# Endpoints appear in several ASA syntaxes:
+#   ACL deny (106023):        src outside:IP/port ... dst inside:IP/port
+#   Built/teardown (302013):  ... for outside:IP/port (..) to inside:IP/port
+#   Conn denied (106001/6/15):... denied from IP/port to IP/port   (no "zone:" prefix)
+# Source keyword = src|from|for, dest keyword = dst|to, each with an OPTIONAL
+# "zone:" prefix (\S*?:) so both the zoned and the bare IP/port forms are captured.
+_IPP = r"(?:\S*?:)?(?P<ip>\d{1,3}(?:\.\d{1,3}){3})/(?P<port>\d+)"
+_SRC = re.compile(r"\b(?:src|from|for)\s+" + _IPP)
+_DST = re.compile(r"\b(?:dst|to)\s+" + _IPP)
 
 _CLASS = 4001  # Network Activity
 
@@ -58,9 +61,9 @@ class CiscoAsaParser(Parser):
         else:
             activity_id, status = 7, "Success"  # Accept / Built
 
-        # endpoints
-        sm = _SRC.search(text) or _FOR.search(text)
-        dm = _DST.search(text) or _TO.search(text)
+        # endpoints (src|from|for -> source, dst|to -> destination)
+        sm = _SRC.search(text)
+        dm = _DST.search(text)
 
         time_ms = self._time_ms(meta)
         # ASA severity 0-4 are notable; map to MEDIUM, else INFO.

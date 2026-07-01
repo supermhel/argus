@@ -108,6 +108,19 @@ def run():
     check(asa_fired[:14] == [False] * 14 and asa_fired[14] is True,
           "port scan (REAL ASA parser): 15 distinct denied ports MUST fire")
 
+    # ...and the bare "from IP/port to IP/port" deny syntax (106001/106006/106015),
+    # which older endpoint regexes dropped entirely (src/dst = None -> rule blind).
+    ps5 = rule_by_id(load_rules(RULES_DIR), PORT_SCAN_ID)
+    ft_fired = []
+    for i in range(15):
+        line = (f"%ASA-2-106001: Inbound TCP connection denied from 203.0.113.7/40000 "
+                f"to 10.0.0.20/{3000 + i} flags SYN on interface outside")
+        ev = asa.parse({"raw": line, "meta": {"received_at": 1_750_000_000 + i,
+                                              "ingest_id": f"ft-{i}"}})
+        ft_fired.append(ps5.evaluate(ev))
+    check(ft_fired[:14] == [False] * 14 and ft_fired[14] is True,
+          "port scan (REAL ASA parser, from/to deny): 15 distinct denied ports MUST fire")
+
     # ---- LATERAL MOVEMENT: 5 distinct hosts fires; 4 does not ----
     lm = rule_by_id(rules, LATERAL_ID)
     check(lm.group_by == "actor.user.name" and lm.distinct_field == "dst_endpoint.hostname",

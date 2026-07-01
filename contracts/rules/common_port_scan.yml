@@ -8,6 +8,9 @@ description: >
   vertical scan probes many closed/filtered ports (denied), whereas a legitimate
   multi-port app produces accepted (activity 7) connections. Distinct-count on
   dst_endpoint.port distinguishes a scan from many hits to a single service.
+  Out of scope by design: scans landing on OPEN ports (accepted connections) are
+  not counted here — this rule targets the closed/filtered-port probing that
+  dominates a real scan.
 level: high
 logsource:
   category: network_activity
