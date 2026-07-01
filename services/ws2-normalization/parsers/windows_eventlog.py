@@ -22,6 +22,12 @@ EventID -> OCSF mapping (class_uid / activity_id constrained to Contract A):
     4688  New process created       -> 1002 Kernel/Process, activity 1 (Launch)
     4672  Special privileges        -> 1002 Kernel/Process, activity 2 (Priv use)
 
+For authentication events, IpAddress/WorkstationName is the logon SOURCE
+(``src_endpoint``) and ``Computer`` is the host being logged INTO
+(``dst_endpoint.hostname``) -- the lateral-movement rule counts distinct
+destination hosts per account off that. Process events have no network
+direction, so ``Computer`` stays on ``src_endpoint``.
+
 Class 1002 (Kernel / Process) is used for 4688/4672 because Contract A's
 ``class_uid`` enum does not include a dedicated Process Activity class (1007);
 ``ocsf-classes.md`` explicitly scopes 1002 to "process exec, privilege use",
@@ -96,7 +102,8 @@ class WindowsEventLogParser(Parser):
             user_sid = rec.get("SubjectUserSid") or rec.get("TargetUserSid")
 
         ip = rec.get("IpAddress") or meta.get("ip")
-        host = rec.get("WorkstationName") or rec.get("Computer")
+        src_host = rec.get("WorkstationName")   # origin workstation (logon source)
+        target_host = rec.get("Computer")       # host the event occurred ON
 
         message = f"{verb} for user {user or '?'}"
         if event_id == 4688 and rec.get("NewProcessName"):
@@ -118,15 +125,27 @@ class WindowsEventLogParser(Parser):
         )
         event["siem"]["sector"] = sector
 
-        sep: dict = {}
+        # Endpoint direction matters for detection. For an AUTHENTICATION event,
+        # IpAddress/WorkstationName is where the logon came FROM (source) and
+        # `Computer` is the host being logged INTO (destination) -- so they map to
+        # src_endpoint and dst_endpoint respectively. This is what lets the
+        # lateral-movement rule count distinct destination hosts per account. For a
+        # process/kernel event there is no network direction; `Computer` is simply
+        # the host it ran on, so it stays on src_endpoint.
+        src: dict = {}
         if ip:
-            sep["ip"] = ip
-        if host:
-            sep["hostname"] = host
+            src["ip"] = ip
         if rec.get("MacAddress"):
-            sep["mac"] = rec["MacAddress"]
-        if sep:
-            event["src_endpoint"] = sep
+            src["mac"] = rec["MacAddress"]
+        if class_uid == _CLS_AUTH:
+            if src_host:
+                src["hostname"] = src_host
+            if target_host:
+                event["dst_endpoint"] = {"hostname": target_host}
+        elif target_host or src_host:
+            src["hostname"] = target_host or src_host
+        if src:
+            event["src_endpoint"] = src
 
         actor: dict = {}
         if user:

@@ -31,7 +31,7 @@ REC_4624 = {
     "EventID": 4624, "TimeCreated": 1750000000000,
     "TargetUserName": "jdoe", "TargetDomainName": "BANKCORP",
     "TargetUserSid": "S-1-5-21-1", "IpAddress": "10.20.30.40",
-    "WorkstationName": "wks-jdoe",
+    "WorkstationName": "wks-jdoe", "Computer": "dc01",
 }
 REC_4634 = {"EventID": 4634, "TargetUserName": "jdoe", "Computer": "wks-jdoe"}
 REC_4647 = {"EventID": 4647, "TargetUserName": "jdoe", "Computer": "wks-jdoe"}
@@ -57,7 +57,12 @@ class TestWindowsEventLogParser(unittest.TestCase):
         self.assertEqual(event["activity_id"], 1)
         self.assertEqual(event["type_uid"], 300201)
         self.assertEqual(event["status"], "Success")
+        # IpAddress/WorkstationName is the logon SOURCE...
         self.assertEqual(event["src_endpoint"]["ip"], "10.20.30.40")
+        self.assertEqual(event["src_endpoint"]["hostname"], "wks-jdoe")
+        # ...and Computer is the host logged INTO (destination) -- this is what the
+        # lateral-movement rule distinct-counts per account.
+        self.assertEqual(event["dst_endpoint"]["hostname"], "dc01")
         self.assertEqual(event["actor"]["user"]["name"], "jdoe")
         self.assertEqual(event["actor"]["user"]["domain"], "BANKCORP")
         self.assertEqual(validate(event), [])

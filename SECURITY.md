@@ -72,6 +72,27 @@ The local stack is configured for convenience, not secrecy. Never commit a real
 `.env`, real credentials, or production secrets to the repository. Default/demo
 credentials must never be reachable from outside the Compose network.
 
+### 5. Syslog UDP ingestion is unauthenticated — keep it on a trusted segment
+
+v0.2 adds a real syslog UDP listener in WS-1 (`SYSLOG_UDP_PORT`, default `5514`).
+Syslog over UDP is **inherently unauthenticated and spoofable** — there is no
+sender verification. Anyone who can reach the port can inject arbitrary log lines,
+which become events in the pipeline (event spoofing / detection poisoning / noise).
+Bind it only to a trusted network segment or management VLAN; do not expose it to
+untrusted networks. This is a property of the syslog protocol, not a bug.
+
+### 6. LLM triage (WS-5) is advisory and prompt-injectable
+
+v0.2 wires WS-5 to a local LLM (Ollama). Normalized event content — which can
+include attacker-controlled log fields — is placed into the triage prompt, so a
+crafted log line can attempt **prompt injection** to skew the model's verdict.
+Two things bound the blast radius: (a) the verdict is **advisory** — it annotates
+an alert that detection **already** raised; it does not gate or suppress detection;
+and (b) model output is coerced to a fixed enum (`verdict`/`level`) with a safe
+default, so malformed/hostile output cannot inject arbitrary data downstream.
+Point `OLLAMA_URL` only at a local/trusted model; treat the triage summary as an
+untrusted hint, not ground truth.
+
 ---
 
 ## Out of scope for v0.1
@@ -83,8 +104,9 @@ The following are **known** and **deferred** to later releases (tracked in the
 - TLS between services and for external endpoints.
 - Multi-tenancy and per-tenant isolation.
 - Hardened, production-grade OpenSearch security configuration.
-- AI-triage prompt-injection guardrails (the AI service is a passthrough stub in
-  v0.1).
+- AI-triage prompt-injection guardrails. As of v0.2 the AI service calls a local
+  LLM; its verdict is advisory and enum-constrained (see threat-boundary §6), but
+  robust prompt-injection defenses are still deferred.
 
 Reports about these documented, out-of-scope limitations are welcome as
 **feature requests**, but they are not treated as vulnerabilities against v0.1.

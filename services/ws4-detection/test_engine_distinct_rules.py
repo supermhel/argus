@@ -48,12 +48,12 @@ def net_event(src, port, t, ingest):
     }
 
 
-def auth_event(user, dst_ip, t, ingest):
+def auth_event(user, dst_host, t, ingest):
     return {
         "class_uid": 3002, "activity_id": 1, "status": "Success", "time": t,
         "actor": {"user": {"name": user}},
         "src_endpoint": {"ip": "192.168.1.50"},
-        "dst_endpoint": {"ip": dst_ip},
+        "dst_endpoint": {"hostname": dst_host},
         "siem": {"ingest_id": ingest},
     }
 
@@ -84,24 +84,44 @@ def run():
 
     # ---- LATERAL MOVEMENT: 5 distinct hosts fires; 4 does not ----
     lm = rule_by_id(rules, LATERAL_ID)
-    check(lm.group_by == "actor.user.name" and lm.distinct_field == "dst_endpoint.ip",
-          "lateral rule should group by user, distinct on dst_endpoint.ip")
-    lf = [lm.evaluate(auth_event("alice", f"10.0.0.{20 + i}", base + i * 1000, f"lm{i}"))
+    check(lm.group_by == "actor.user.name" and lm.distinct_field == "dst_endpoint.hostname",
+          "lateral rule should group by user, distinct on dst_endpoint.hostname")
+    lf = [lm.evaluate(auth_event("alice", f"host-{i}", base + i * 1000, f"lm{i}"))
           for i in range(5)]
     check(lf[:4] == [False] * 4, "lateral: first 4 distinct hosts must NOT fire")
     check(lf[4] is True, "lateral: 5th distinct host MUST fire")
 
     lm2 = rule_by_id(load_rules(RULES_DIR), LATERAL_ID)
-    lf2 = [lm2.evaluate(auth_event("bob", f"10.0.1.{20 + i}", base + i * 1000, f"b{i}"))
+    lf2 = [lm2.evaluate(auth_event("bob", f"other-{i}", base + i * 1000, f"b{i}"))
            for i in range(4)]
     check(not any(lf2), "lateral: 4 distinct hosts must NOT fire")
 
     # failed logins (activity 4) must NOT match the success-only lateral rule
     lm3 = rule_by_id(load_rules(RULES_DIR), LATERAL_ID)
-    bad = auth_event("carol", "10.0.2.5", base, "c0")
+    bad = auth_event("carol", "srv-5", base, "c0")
     bad["activity_id"] = 4
     bad["status"] = "Failure"
     check(lm3.evaluate(bad) is False, "lateral: failed auth must NOT match")
+
+    # --- REGRESSION GUARD: the rule must fire on events as the REAL Windows parser
+    # emits them (this is the gap the synthetic tests missed: the parser must put the
+    # target host on dst_endpoint.hostname, not src_endpoint). Feed 5 successful 4624
+    # logons by one account to 5 distinct Computers through the actual parser. ---
+    sys.path.insert(0, str(ROOT / "services"))                    # for `shared`
+    sys.path.insert(0, str(ROOT / "services" / "ws2-normalization"))  # for `parsers`
+    from parsers.windows_eventlog import WindowsEventLogParser  # noqa: E402
+    wparser = WindowsEventLogParser()
+    lm4 = rule_by_id(load_rules(RULES_DIR), LATERAL_ID)
+    e2e = []
+    for i in range(5):
+        raw = {"raw": {"EventID": 4624, "TargetUserName": "dave",
+                       "Computer": f"win-host-{i}", "IpAddress": "10.9.9.9",
+                       "TimeCreated": base + i * 1000},
+               "meta": {"ingest_id": f"w4624-{i}"}}
+        ev = wparser.parse(raw)
+        e2e.append(lm4.evaluate(ev))
+    check(e2e[:4] == [False] * 4 and e2e[4] is True,
+          "lateral (REAL parser): 5 distinct Windows logon targets MUST fire")
 
     # ---- BRUTE FORCE unchanged: plain count of 10 failed auths fires ----
     bf = rule_by_id(rules, BRUTEFORCE_ID)

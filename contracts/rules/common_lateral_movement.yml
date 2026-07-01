@@ -4,8 +4,9 @@ status: stable
 description: >
   One account successfully authenticating to 5+ DISTINCT destination hosts within
   300 seconds. Targets OCSF Authentication (class 3002, activity 1 Logon) with
-  status Success. Distinct-count on dst_endpoint.ip catches an attacker reusing
-  valid credentials to hop across hosts.
+  status Success. Distinct-count on dst_endpoint.hostname catches an attacker
+  reusing valid credentials to hop across hosts (Windows 4624 records the target
+  host as dst_endpoint.hostname).
 level: high
 logsource:
   category: authentication
@@ -17,11 +18,11 @@ detection:
   condition: auth_success
 fields:
   - actor.user.name
-  - dst_endpoint.ip
+  - dst_endpoint.hostname
 siem:
   sector: common
   score_weight: 65
   window_seconds: 300
   threshold: 5
   group_by: actor.user.name
-  distinct_field: dst_endpoint.ip
+  distinct_field: dst_endpoint.hostname
