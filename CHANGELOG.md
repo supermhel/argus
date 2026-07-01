@@ -7,15 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-01
+
 ### Added
 
 - **Generic syslog parser** (`generic_syslog`) — RFC 3164 syslog lines (with or without `<PRI>`) → OCSF, with PRI-severity mapping. Covers sources that don't match a product-specific parser.
 - **Windows Event Log parser** (`windows_eventlog`) — broad coverage of security-relevant EventIDs (4624 logon, 4634/4647 logoff, 4688 process creation, 4672 special privileges) → OCSF. Complements the existing Active Directory 4625 parser without overlap.
-- **Port-scan detection rule** — fires when one source IP hits ≥15 distinct destination ports within 60s (OCSF Network Activity).
+- **Port-scan detection rule** — fires when one source IP hits ≥15 distinct DENIED destination ports within 60s (OCSF Network Activity, activity_id 6). Restricted to denies for precision; open-port scans are intentionally out of scope.
 - **Lateral-movement detection rule** — fires when one account successfully authenticates to ≥5 distinct destination hosts within 300s.
 - **Distinct-count windowing** — new `hit_distinct()` on both the deque (single-replica) and Redis (multi-replica, sorted-set) window counters, so rules can threshold on the number of *distinct* field values in a window, not just the event count. Rules opt in via `siem.distinct_field` in YAML.
 - **Real local-LLM triage (Ollama)** — WS-5 now calls a local Ollama model (`OLLAMA_URL`/`OLLAMA_MODEL`) for alert triage, returning a structured verdict, and degrades gracefully to the passthrough stub when Ollama is unset, unreachable, or returns malformed output. The acceptance test still runs stub-only with zero infra.
-- **Real syslog UDP listener (WS-1)** — collectors now accept live syslog datagrams (`SYSLOG_UDP_HOST`/`SYSLOG_UDP_PORT`, default `0.0.0.0:5514`) and feed them into `raw.events` for the generic syslog parser, alongside the existing mock collection path.
+- **Real syslog UDP listener (WS-1)** — collectors now accept live syslog datagrams (`SYSLOG_UDP_HOST`/`SYSLOG_UDP_PORT`, default `0.0.0.0:5514`, now published in `docker-compose.yml`) and feed them into `raw.events` for the generic syslog parser, alongside the existing mock collection path.
+
+### Fixed
+
+- Windows parser mapped the logon source and destination host to the same field, leaving the lateral-movement rule unable to ever fire on real data; auth events now correctly split `src_endpoint` (logon origin) from `dst_endpoint.hostname` (target host).
+- Cisco ASA parser dropped both endpoints on `denied from IP/port to IP/port`-style deny messages (106001/106006/106015), making the port-scan rule blind to that message family; endpoint extraction now covers `src/dst`, `for/to`, and `from/to` syntaxes.
+
+### Security
+
+- Documented the two new v0.2 attack surfaces in `SECURITY.md`: the syslog UDP listener is unauthenticated/spoofable by protocol design (keep it on a trusted network segment), and LLM triage output is advisory and enum-constrained but not immune to prompt injection.
+- Capped the Ollama HTTP response read at 1 MiB to bound memory use against a runaway/hostile local response.
+
+### Verified live (2026-07-01)
+
+Full Docker stack (Docker Desktop 4.80.0 / engine 29.6.1): a real UDP syslog packet sent from the host to the newly-published `5514/udp` port was received by the container's live listener and indexed; 15 Cisco ASA denies to distinct ports fired the port-scan rule; 5 Windows 4624 logons to distinct hosts fired the lateral-movement rule; the existing brute-force rule fired unaffected. All three produced a rule alert AND a WS-5 AI triage verdict (`StubLLM`, since no `OLLAMA_URL` was configured for this run — confirming the documented fallback path), and all three rendered live in the dashboard via `GET /api/alerts`.
 
 ## [0.1.0] - 2026-06-30
 
