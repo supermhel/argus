@@ -76,6 +76,7 @@ class SyslogUDPServer:
         self.deterministic_id = deterministic_id
         self.log = logger
         self.events_produced = 0
+        self.events_dropped = 0   # datagrams lost because produce() failed
 
         server = self  # capture for the handler closure
 
@@ -95,7 +96,14 @@ class SyslogUDPServer:
         if not line:
             return
         event = build_raw_event(line, deterministic_id=self.deterministic_id)
-        self.bus.produce(self.topic, key=peer_ip, payload=event)
+        try:
+            self.bus.produce(self.topic, key=peer_ip, payload=event)
+        except Exception as exc:  # bus/Redis unreachable -> drop this datagram, keep serving
+            self.events_dropped += 1
+            if self.log is not None:
+                self.log.warn("dropped syslog datagram: bus produce failed",
+                              src=peer_ip, error=str(exc))
+            return
         self.events_produced += 1
         if self.log is not None:
             self.log.info("syslog datagram", src=peer_ip,

@@ -39,9 +39,10 @@ LATERAL_ID = "2e3d4c5b-6f70-4819-9b02-1c2d3e4f5061"
 BRUTEFORCE_ID = "6f1c8a2e-0d3b-4c11-9a21-7b5e2f9a1c01"
 
 
-def net_event(src, port, t, ingest):
+def net_event(src, port, t, ingest, activity_id=6):
+    # activity_id 6 = Deny (what the port-scan rule keys on); 7 = Accept.
     return {
-        "class_uid": 4001, "activity_id": 7, "time": t,
+        "class_uid": 4001, "activity_id": activity_id, "time": t,
         "src_endpoint": {"ip": src},
         "dst_endpoint": {"ip": "10.0.0.1", "port": port},
         "siem": {"ingest_id": ingest},
@@ -81,6 +82,31 @@ def run():
     rep = [ps2.evaluate(net_event("198.51.100.7", 22, base + i * 100, f"r{i}"))
            for i in range(30)]
     check(not any(rep), "port scan: 30 hits on ONE port must NOT fire (distinct, not count)")
+
+    # precision: ACCEPTED connections (activity 7) to 15 distinct ports must NOT fire
+    # -- the rule keys on denies only, so a legit multi-port app is not a scan.
+    ps3 = rule_by_id(load_rules(RULES_DIR), PORT_SCAN_ID)
+    acc = [ps3.evaluate(net_event("203.0.113.11", 3000 + i, base + i * 100, f"a{i}",
+                                  activity_id=7))
+           for i in range(15)]
+    check(not any(acc), "port scan: 15 ACCEPTED distinct ports must NOT fire (denies only)")
+
+    # REGRESSION GUARD: fire on events as the REAL Cisco ASA parser emits them --
+    # 15 denied connections from one src to 15 distinct dst ports.
+    sys.path.insert(0, str(ROOT / "services"))                    # for `shared`
+    sys.path.insert(0, str(ROOT / "services" / "ws2-normalization"))  # for `parsers`
+    from parsers.cisco_asa import CiscoAsaParser  # noqa: E402
+    asa = CiscoAsaParser()
+    ps4 = rule_by_id(load_rules(RULES_DIR), PORT_SCAN_ID)
+    asa_fired = []
+    for i in range(15):
+        line = (f"%ASA-4-106023: Deny tcp src outside:203.0.113.5/51000 "
+                f"dst inside:10.0.0.10/{2000 + i} by access-group acl_out")
+        ev = asa.parse({"raw": line, "meta": {"received_at": 1_750_000_000 + i,
+                                              "ingest_id": f"asa-{i}"}})
+        asa_fired.append(ps4.evaluate(ev))
+    check(asa_fired[:14] == [False] * 14 and asa_fired[14] is True,
+          "port scan (REAL ASA parser): 15 distinct denied ports MUST fire")
 
     # ---- LATERAL MOVEMENT: 5 distinct hosts fires; 4 does not ----
     lm = rule_by_id(rules, LATERAL_ID)

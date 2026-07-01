@@ -47,6 +47,10 @@ _VERDICTS = {"benign", "suspicious", "malicious", "unknown"}
 _LEVELS = {"low", "medium", "high", "critical"}
 _SAFE_VERDICT = {"verdict": "unknown", "summary": "", "level": "low"}
 
+# Upper bound on the Ollama HTTP response we will read into memory. A triage JSON
+# verdict is tiny; 1 MiB is generous headroom while still capping a runaway response.
+_MAX_RESPONSE_BYTES = 1_048_576
+
 
 PROMPT_TEMPLATE = (
     "You are a SIEM tier-1 analyst triaging a single security alert.\n"
@@ -136,7 +140,10 @@ class OllamaLLM:
             f"{self.url}/api/generate", data=body,
             headers={"Content-Type": "application/json"}, method="POST")
         with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # noqa: S310
-            data = json.loads(resp.read().decode())
+            # Cap the read: a triage verdict is a few hundred bytes, so bound it so a
+            # runaway/hostile response can't exhaust memory. An over-cap response is
+            # truncated -> json.loads fails -> FallbackLLM degrades to the stub.
+            data = json.loads(resp.read(_MAX_RESPONSE_BYTES).decode())
         # Ollama wraps the model text in {"response": "..."}; that text is the JSON.
         text = data.get("response", "") if isinstance(data, dict) else ""
         try:
