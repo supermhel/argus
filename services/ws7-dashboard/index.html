@@ -122,6 +122,12 @@ async function getAlerts(){
 }
 function getSources(){ return window.SIEM_MOCK.sources; }
 const lvl = s => ({critical:"crit",high:"high",medium:"med",low:"low"}[s]||"low");
+// SECURITY: alert/asset fields (hostname, IP, rule_title, etc.) originate from
+// attacker-controlled log lines. They are rendered into innerHTML below, so every
+// dynamic value MUST be HTML-escaped or a crafted log yields stored DOM XSS in the
+// analyst's browser (e.g. a syslog hostname of `<img/src=x/onerror=...>`).
+const esc = s => String(s==null?"":s).replace(/[&<>"']/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
 // ---- nav ----
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
@@ -140,10 +146,10 @@ function renderGlobal(){
     ["Alertes critiques", crit],["Alertes totales", alerts.length]
   ].map(([l,n])=>`<div class="card"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("");
   document.getElementById("alertRows").innerHTML = alerts.sort((a,b)=>b.score-a.score).map(a=>`
-    <tr><td class="muted">${new Date(a.time).toLocaleTimeString()}</td>
-    <td>${a.rule_title}</td><td>${a.sector||""}</td>
-    <td><span class="pill ${lvl(a.level)}">${a.level}</span></td>
-    <td>${a.score}</td><td class="muted">${(a.src_endpoint||{}).ip||""}</td></tr>`).join("");
+    <tr><td class="muted">${esc(new Date(a.time).toLocaleTimeString())}</td>
+    <td>${esc(a.rule_title)}</td><td>${esc(a.sector||"")}</td>
+    <td><span class="pill ${lvl(a.level)}">${esc(a.level)}</span></td>
+    <td>${esc(a.score)}</td><td class="muted">${esc((a.src_endpoint||{}).ip||"")}</td></tr>`).join("");
 }
 
 // ---- LEVEL 2: inventory ----
@@ -153,20 +159,20 @@ async function renderInventory(){
 }
 function drawAssets(list){
   document.getElementById("assetRows").innerHTML = list.map((a,i)=>`
-    <tr class="clk" data-i="${i}"><td>${a.mac}</td><td>${a.hostname||""}</td>
-    <td>${a.ip_current||""}</td><td>${a.sector||""}</td><td>${a.type||""}</td>
-    <td><span class="pill ${a.status==='active'?'low':'med'}">${a.status}</span></td></tr>`).join("");
+    <tr class="clk" data-i="${i}"><td>${esc(a.mac)}</td><td>${esc(a.hostname||"")}</td>
+    <td>${esc(a.ip_current||"")}</td><td>${esc(a.sector||"")}</td><td>${esc(a.type||"")}</td>
+    <td><span class="pill ${a.status==='active'?'low':'med'}">${esc(a.status)}</span></td></tr>`).join("");
   document.querySelectorAll("#assetRows tr").forEach(tr=>tr.onclick=()=>showAsset(list[+tr.dataset.i]));
 }
 function showAsset(a){
-  const hist = (a.ip_history||[]).map(h=>`<tr><td>${h.ip}</td><td class="muted">${h.from}</td><td class="muted">${h.to||"actuel"}</td></tr>`).join("")||"<tr><td colspan=3 class=muted>—</td></tr>";
+  const hist = (a.ip_history||[]).map(h=>`<tr><td>${esc(h.ip)}</td><td class="muted">${esc(h.from)}</td><td class="muted">${esc(h.to||"actuel")}</td></tr>`).join("")||"<tr><td colspan=3 class=muted>—</td></tr>";
   document.getElementById("assetDetail").innerHTML = `<div class="detail">
-    <h3>${a.hostname||a.mac} <span class="muted">(${a.mac})</span></h3>
-    <div class="kv"><div class="k">IP actuelle</div><div>${a.ip_current||"—"}</div>
-    <div class="k">Secteur</div><div>${a.sector||"—"}</div>
-    <div class="k">Type</div><div>${a.type||"—"}</div>
-    <div class="k">Protocoles</div><div>${(a.protocols_seen||[]).join(", ")||"—"}</div>
-    <div class="k">Vu pour la dernière fois</div><div>${a.last_seen||"—"}</div></div>
+    <h3>${esc(a.hostname||a.mac)} <span class="muted">(${esc(a.mac)})</span></h3>
+    <div class="kv"><div class="k">IP actuelle</div><div>${esc(a.ip_current||"—")}</div>
+    <div class="k">Secteur</div><div>${esc(a.sector||"—")}</div>
+    <div class="k">Type</div><div>${esc(a.type||"—")}</div>
+    <div class="k">Protocoles</div><div>${esc((a.protocols_seen||[]).join(", ")||"—")}</div>
+    <div class="k">Vu pour la dernière fois</div><div>${esc(a.last_seen||"—")}</div></div>
     <h3 style="margin-top:16px">Historique IP</h3>
     <table><thead><tr><th>IP</th><th>Depuis</th><th>Jusqu'à</th></tr></thead><tbody>${hist}</tbody></table></div>`;
 }
@@ -184,7 +190,7 @@ document.getElementById("sector").onchange=applyFilter;
 function renderSources(){
   const s=getSources(), max=Math.max(...Object.values(s));
   document.getElementById("srcBars").innerHTML = Object.entries(s).map(([k,v])=>`
-    <div class="src"><div class="lbl">${k}</div>
+    <div class="src"><div class="lbl">${esc(k)}</div>
     <div class="bar" style="flex:1"><span style="width:${(v/max*100).toFixed(1)}%"></span></div>
     <div style="width:60px;text-align:right">${v.toLocaleString()}</div></div>`).join("");
 }
