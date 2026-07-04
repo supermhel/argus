@@ -9,6 +9,9 @@ fail=0
 
 echo "== Phase 0: contract validator =="
 $PY tools/validate_contract.py || fail=1
+echo
+echo "== A6: anti-dormancy check (rules must be satisfiable by a real parser) =="
+$PY tools/check_rule_producers.py || fail=1
 
 for ws in ws1-collectors ws2-normalization ws3-indexer ws4-detection ws5-ai ws6-inventory ws7-dashboard; do
   echo
@@ -32,9 +35,18 @@ echo "== ws4 distinct-count window + port-scan/lateral-movement rules (v0.2) =="
 $PY services/ws4-detection/test_window_distinct.py || fail=1
 $PY services/ws4-detection/test_engine_distinct_rules.py || fail=1
 echo
+echo "== ws4 v0.3: password-spray + priv-grant fire on REAL parser output =="
+$PY services/ws4-detection/test_v03_new_rules.py || fail=1
+echo
+echo "== ws4 v0.3 (A3): rule grammar (comparison ops + allowlist), fail-closed =="
+$PY services/ws4-detection/test_v03_rule_grammar.py || fail=1
+echo
 echo "== ws2 parsers: generic syslog + windows event log (v0.2) =="
 $PY services/ws2-normalization/parsers/test_generic_syslog.py || fail=1
 $PY services/ws2-normalization/parsers/test_windows_eventlog.py || fail=1
+echo
+echo "== ws2 parsers: db_audit (v0.3, un-dormants bank_db_priv_esc.yml) =="
+$PY services/ws2-normalization/parsers/test_db_audit.py || fail=1
 echo
 echo "== ws5 ollama adapter + fallback (v0.2) =="
 $PY services/ws5-ai/test_llm_adapter.py || fail=1

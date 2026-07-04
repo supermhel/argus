@@ -37,10 +37,20 @@ class Detector:
     def __init__(self):
         self.rules = load_rules(RULES_DIR)
         self.scorer = Scorer(SCORING_YAML)
+        # B1: index rules by their (equality) class_uid selection so process()
+        # only evaluates the subset of rules that could possibly match a given
+        # event's class_uid, instead of every rule for every event. Rules with
+        # no class_uid equality selection go in the catch-all bucket (key None)
+        # and are still evaluated against every event -- conservative/safe.
+        self._by_class_uid: dict = {None: []}
+        for r in self.rules:
+            self._by_class_uid.setdefault(r.class_uid, []).append(r)
 
     def process(self, event: dict):
         """Return (scored_event, matched_rules, action)."""
-        matched = [r for r in self.rules if r.evaluate(event)]
+        class_uid = event.get("class_uid")
+        candidates = self._by_class_uid.get(class_uid, []) + self._by_class_uid[None]
+        matched = [r for r in candidates if r.evaluate(event)]
         score = self.scorer.score(matched)
         event.setdefault("siem", {})["score"] = score
         action = self.scorer.route(score)

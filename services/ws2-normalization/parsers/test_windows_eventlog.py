@@ -45,6 +45,30 @@ REC_4672 = {
     "EventID": 4672, "SubjectUserName": "admin",
     "SubjectDomainName": "BANKCORP", "Computer": "dc01",
 }
+# v0.3 (A4): Account Change fixtures. Subject = acting admin; Target = the
+# account being created/enabled/deleted/granted.
+REC_4720 = {
+    "EventID": 4720, "TimeCreated": 1750000000000,
+    "SubjectUserName": "admin", "SubjectDomainName": "BANKCORP",
+    "TargetUserName": "new_svc_acct", "TargetDomainName": "BANKCORP",
+    "TargetUserSid": "S-1-5-21-9", "Computer": "dc01",
+}
+REC_4722 = {
+    "EventID": 4722, "SubjectUserName": "admin",
+    "TargetUserName": "new_svc_acct", "Computer": "dc01",
+}
+REC_4726 = {
+    "EventID": 4726, "SubjectUserName": "admin",
+    "TargetUserName": "old_svc_acct", "Computer": "dc01",
+}
+REC_4728 = {
+    "EventID": 4728, "SubjectUserName": "admin",
+    "TargetUserName": "new_svc_acct", "Computer": "dc01",
+}
+REC_4732 = {
+    "EventID": 4732, "SubjectUserName": "admin",
+    "TargetUserName": "new_svc_acct", "Computer": "dc01",
+}
 
 
 class TestWindowsEventLogParser(unittest.TestCase):
@@ -144,7 +168,8 @@ class TestWindowsEventLogParser(unittest.TestCase):
 
     # ---- type_uid invariant for every handled EventID ----------------
     def test_type_uid_invariant(self):
-        for rec in (REC_4624, REC_4634, REC_4647, REC_4688, REC_4672):
+        for rec in (REC_4624, REC_4634, REC_4647, REC_4688, REC_4672,
+                    REC_4720, REC_4722, REC_4726, REC_4728, REC_4732):
             with self.subTest(eventid=rec["EventID"]):
                 event = PARSER.parse(_raw(rec))
                 self.assertIsNotNone(event)
@@ -153,6 +178,52 @@ class TestWindowsEventLogParser(unittest.TestCase):
                     event["class_uid"] * 100 + event["activity_id"],
                 )
                 self.assertEqual(validate(event), [])
+
+    # ---- v0.3 (A4): Account Change (3003) EventIDs --------------------
+    def test_4720_account_created(self):
+        event = PARSER.parse(_raw(REC_4720))
+        self.assertIsNotNone(event)
+        self.assertEqual(event["class_uid"], 3003)
+        self.assertEqual(event["activity_id"], 1)
+        self.assertEqual(event["type_uid"], 300301)
+        self.assertEqual(validate(event), [])
+
+    def test_4722_account_enabled(self):
+        event = PARSER.parse(_raw(REC_4722))
+        self.assertEqual(event["class_uid"], 3003)
+        self.assertEqual(event["activity_id"], 2)
+
+    def test_4726_account_deleted(self):
+        event = PARSER.parse(_raw(REC_4726))
+        self.assertEqual(event["class_uid"], 3003)
+        self.assertEqual(event["activity_id"], 4)
+
+    def test_4728_and_4732_are_privilege_grant(self):
+        for rec in (REC_4728, REC_4732):
+            with self.subTest(eventid=rec["EventID"]):
+                event = PARSER.parse(_raw(rec))
+                self.assertEqual(event["class_uid"], 3003)
+                self.assertEqual(event["activity_id"], 5)
+
+    def test_account_change_actor_is_acting_admin_not_target(self):
+        """The acting admin (Subject) goes in actor.user; the affected account
+        (Target) is a DIFFERENT identity and must NOT leak into actor.user."""
+        event = PARSER.parse(_raw(REC_4720))
+        self.assertEqual(event["actor"]["user"]["name"], "admin")
+        self.assertNotEqual(event["actor"]["user"]["name"], "new_svc_acct")
+
+    def test_account_change_target_user_exposed_under_unmapped(self):
+        event = PARSER.parse(_raw(REC_4720))
+        self.assertEqual(event["unmapped"]["target_user"]["name"], "new_svc_acct")
+        self.assertEqual(event["unmapped"]["target_user"]["domain"], "BANKCORP")
+        self.assertEqual(event["unmapped"]["target_user"]["uid"], "S-1-5-21-9")
+
+    def test_account_change_no_target_user_no_unmapped_key(self):
+        """4688/4672 (process/priv-use, not account-change) never populate
+        TargetUserName in these fixtures -- `unmapped` must be absent, not an
+        empty/garbage dict."""
+        event = PARSER.parse(_raw(REC_4672))
+        self.assertNotIn("unmapped", event)
 
 
 if __name__ == "__main__":

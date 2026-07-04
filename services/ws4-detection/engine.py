@@ -24,6 +24,7 @@ distinct dst hosts for lateral movement) rather than the raw number of events.
 """
 from __future__ import annotations
 
+import ipaddress
 import re
 from pathlib import Path
 
@@ -41,8 +42,106 @@ def get_path(doc: dict, dotted: str):
     return node
 
 
+# --- A3: allowlists -----------------------------------------------------------
+# Loaded once per rule-load pass (see load_rules) and shared via a module-level
+# cache keyed by directory, so repeated `not_in: <name>` references across rules
+# don't re-read/re-parse the file. A missing/malformed allowlist fails CLOSED:
+# the rule selection referencing it can never match (never raises), and a
+# warning is printed once at load time so the misconfiguration is visible.
+_ALLOWLIST_CACHE: dict[str, "Allowlist"] = {}
+
+
+class Allowlist:
+    """A loaded allowlist: exact-match strings plus optional CIDR ranges.
+
+    `ok` is False when the file was missing/malformed; matches() then always
+    returns False (fail closed) instead of raising.
+    """
+
+    def __init__(self, entries: list, ok: bool = True):
+        self.ok = ok
+        self.exact: set[str] = set()
+        self.nets: list = []
+        for entry in entries or []:
+            if not isinstance(entry, str):
+                continue
+            self.exact.add(entry)
+            try:
+                self.nets.append(ipaddress.ip_network(entry, strict=False))
+            except ValueError:
+                pass  # not CIDR-shaped; exact-match only
+
+    def matches(self, value) -> bool:
+        if not self.ok:
+            return False
+        if value is None:
+            return False
+        s = str(value)
+        if s in self.exact:
+            return True
+        try:
+            addr = ipaddress.ip_address(s)
+        except ValueError:
+            return False
+        for net in self.nets:
+            try:
+                if addr in net:
+                    return True
+            except TypeError:
+                continue  # mismatched IP version (v4 addr vs v6 net etc.)
+        return False
+
+
+def load_allowlist(allowlists_dir: Path, name: str) -> Allowlist:
+    """Load (and cache) an allowlist by name from contracts/allowlists/<name>.yml."""
+    cache_key = f"{Path(allowlists_dir).resolve()}::{name}"
+    if cache_key in _ALLOWLIST_CACHE:
+        return _ALLOWLIST_CACHE[cache_key]
+
+    path = Path(allowlists_dir) / f"{name}.yml"
+    allowlist: Allowlist
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        entries = raw.get("entries") if isinstance(raw, dict) else None
+        if not isinstance(entries, list):
+            raise ValueError("allowlist file missing a list 'entries:' key")
+        allowlist = Allowlist(entries, ok=True)
+    except Exception as exc:  # missing file, bad YAML, bad shape -> fail closed
+        print(f"[engine] WARNING: allowlist '{name}' failed to load ({exc}); "
+              f"rule selections using not_in:{name} will never match (fail closed).")
+        allowlist = Allowlist([], ok=False)
+
+    _ALLOWLIST_CACHE[cache_key] = allowlist
+    return allowlist
+
+
+_NUMERIC_OPS = {"gt", "gte", "lt", "lte", "ne"}
+
+
+def _numeric_compare(op: str, actual, expected) -> bool:
+    """Fail-closed numeric comparison: any non-numeric operand -> False, never raise."""
+    if isinstance(actual, bool) or isinstance(expected, bool):
+        return False  # bool is a numeric subtype in Python; exclude to avoid surprises
+    if not isinstance(actual, (int, float)) or not isinstance(expected, (int, float)):
+        return False
+    try:
+        if op == "gt":
+            return actual > expected
+        if op == "gte":
+            return actual >= expected
+        if op == "lt":
+            return actual < expected
+        if op == "lte":
+            return actual <= expected
+        if op == "ne":
+            return actual != expected
+    except TypeError:
+        return False
+    return False
+
+
 class Rule:
-    def __init__(self, raw: dict):
+    def __init__(self, raw: dict, allowlists_dir: Path | None = None):
         self.raw = raw
         self.id = raw.get("id")
         self.title = raw.get("title", "untitled")
@@ -50,6 +149,19 @@ class Rule:
         det = raw.get("detection", {})
         self.condition = det.get("condition", "")
         self.selections = {k: v for k, v in det.items() if k != "condition"}
+        self._allowlists_dir = allowlists_dir
+        # B1: if this rule has a plain equality selection on class_uid, remember
+        # the value so Detector can bucket rules by class_uid and skip evaluating
+        # rules that can never match a given event's class_uid. A rule with no
+        # such selection (or a non-scalar/operator class_uid) stays in the
+        # catch-all bucket (self.class_uid stays None) and is always evaluated.
+        self.class_uid = None
+        for sel in self.selections.values():
+            if isinstance(sel, dict) and "class_uid" in sel:
+                val = sel["class_uid"]
+                if isinstance(val, (int, str)):
+                    self.class_uid = val
+                break
         siem = raw.get("siem", {})
         self.sector = siem.get("sector", "common")
         self.score_weight = int(siem.get("score_weight", 0))
@@ -72,8 +184,34 @@ class Rule:
 
     def _selection_matches(self, sel: dict, event: dict) -> bool:
         for path, expected in sel.items():
-            if get_path(event, path) != expected:
+            actual = get_path(event, path)
+            if isinstance(expected, dict):
+                if not self._operator_matches(expected, actual):
+                    return False
+                continue
+            if actual != expected:
                 return False
+        return True
+
+    def _operator_matches(self, expected: dict, actual) -> bool:
+        """A3: evaluate an operator-shaped selection value, e.g. {gt: 60} or
+        {not_in: "corp_ranges"}. Unknown/malformed operator dicts fail closed
+        (return False), never raise -- this runs on untrusted contributor rules.
+        """
+        if not expected:
+            return False
+        for op, arg in expected.items():
+            if op in _NUMERIC_OPS:
+                if not _numeric_compare(op, actual, arg):
+                    return False
+            elif op == "not_in":
+                if not isinstance(arg, str):
+                    return False  # malformed allowlist reference -> fail closed
+                allowlist = load_allowlist(self._allowlists_dir or _default_allowlists_dir(), arg)
+                if allowlist.matches(actual):
+                    return False  # value IS in the allowlist -> suppressed -> no match
+            else:
+                return False  # unknown operator -> fail closed
         return True
 
     def _eval_condition(self, event: dict) -> bool:
@@ -177,10 +315,17 @@ def _parse_atom(tokens, i, values):
     return bool(values.get(t, False)), i + 1
 
 
-def load_rules(rules_dir: Path) -> list[Rule]:
+def _default_allowlists_dir() -> Path:
+    """contracts/allowlists sibling to contracts/rules, best-effort. If neither
+    exists, callers fail closed via load_allowlist's missing-file handling."""
+    return Path(__file__).resolve().parent.parent.parent / "contracts" / "allowlists"
+
+
+def load_rules(rules_dir: Path, allowlists_dir: Path | None = None) -> list[Rule]:
     rules = []
+    resolved_allowlists = allowlists_dir or (Path(rules_dir).parent / "allowlists")
     for path in sorted(Path(rules_dir).glob("*.yml")):
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
         if raw:
-            rules.append(Rule(raw))
+            rules.append(Rule(raw, allowlists_dir=resolved_allowlists))
     return rules

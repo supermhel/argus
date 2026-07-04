@@ -1,0 +1,23 @@
+title: Privileged group membership grant
+id: 7d3e9a52-1f6c-4a88-9b3d-2e5c8f1a6d40
+status: stable
+description: >
+  A member was added to a security-enabled privileged group (Windows EventID
+  4728/4732, OCSF Account Change class 3003, activity_id 5 Privilege Grant).
+  A classic persistence step. Not stateful (single-shot) -- one grant is itself
+  notable, but scored medium-high rather than critical since privileged-group
+  changes also happen during routine admin work.
+level: high
+logsource:
+  category: account_change
+detection:
+  priv_grant:
+    class_uid: 3003
+    activity_id: 5
+  condition: priv_grant
+fields:
+  - actor.user.name
+  - unmapped.target_user.name
+siem:
+  sector: common
+  score_weight: 65

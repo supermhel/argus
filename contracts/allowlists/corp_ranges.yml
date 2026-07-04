@@ -1,0 +1,16 @@
+# Example allowlist (v0.3, A3): CIDR ranges and/or exact-match strings a rule can
+# suppress via a `not_in: corp_ranges` selection clause, e.g.:
+#
+#   detection:
+#     scan:
+#       class_uid: 4001
+#       src_endpoint.ip: {not_in: corp_ranges}
+#
+# CIDR-shaped entries match by network membership; anything else matches by
+# exact string equality. Loaded once per rule-load pass (see engine.py's
+# load_allowlist) and cached -- edit this file and reload rules to pick up
+# changes.
+entries:
+  - "10.0.0.0/8"
+  - "192.168.0.0/16"
+  - "172.16.0.0/12"

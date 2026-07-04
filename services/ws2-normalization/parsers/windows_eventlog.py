@@ -21,6 +21,13 @@ EventID -> OCSF mapping (class_uid / activity_id constrained to Contract A):
     4647  User-initiated logoff     -> 3002 Authentication, activity 2 (Logoff)
     4688  New process created       -> 1002 Kernel/Process, activity 1 (Launch)
     4672  Special privileges        -> 1002 Kernel/Process, activity 2 (Priv use)
+    4720  Account created           -> 3003 Account Change, activity 1 (Create)
+    4722  Account enabled           -> 3003 Account Change, activity 2 (Enable)
+    4732  Member added to local security-enabled group
+                                     -> 3003 Account Change, activity 5 (Priv Grant)
+    4728  Member added to global security-enabled group
+                                     -> 3003 Account Change, activity 5 (Priv Grant)
+    4726  Account deleted           -> 3003 Account Change, activity 4 (Delete)
 
 For authentication events, IpAddress/WorkstationName is the logon SOURCE
 (``src_endpoint``) and ``Computer`` is the host being logged INTO
@@ -33,6 +40,17 @@ Class 1002 (Kernel / Process) is used for 4688/4672 because Contract A's
 ``ocsf-classes.md`` explicitly scopes 1002 to "process exec, privilege use",
 which matches both events. EventIDs not in the table (including 4625, owned by
 the AD parser) and malformed input return ``None``.
+
+Class 3003 (Account Change) events (4720/4722/4732/4728/4726) have no logon
+source/dest -- they are an ADMIN acting on a TARGET account. The acting admin
+goes in ``actor.user`` (SubjectUserName/SubjectDomainName/SubjectUserSid, same
+fields 4688/4672 already read for the actor). The account being created/
+enabled/granted/deleted is a *different* identity than the actor and is
+exposed as ``unmapped.target_user`` (name/domain/sid), populated from
+TargetUserName/TargetDomainName/TargetUserSid -- the same raw field names used
+for the logon-target identity elsewhere in this file, kept consistent here but
+under ``unmapped`` since OCSF's ``actor``/``user`` top-level slots are already
+spoken for by the acting admin.
 """
 from __future__ import annotations
 
@@ -40,10 +58,11 @@ import json
 import time
 from typing import Optional
 
-from .base import Parser, SEV_INFO, SEV_MEDIUM
+from .base import Parser, SEV_INFO, SEV_MEDIUM, SEV_HIGH
 
 _CLS_AUTH = 3002    # Authentication
 _CLS_PROC = 1002    # Kernel / Process
+_CLS_ACCT = 3003    # Account Change
 
 # Activity ids within class 1002 (Contract A leaves these open, 0-99).
 _ACT_PROC_LAUNCH = 1   # process launch / exec
@@ -56,6 +75,13 @@ _EVENT_MAP: dict[int, tuple] = {
     4647: (_CLS_AUTH, 2, "Success", SEV_INFO, "Logoff"),
     4688: (_CLS_PROC, _ACT_PROC_LAUNCH, None, SEV_INFO, "Process created"),
     4672: (_CLS_PROC, _ACT_PROC_PRIV, "Success", SEV_MEDIUM, "Special privileges assigned"),
+    # v0.3 (A4): Account Change events -- see the module docstring's "Class 3003"
+    # section for the actor/target-account field mapping this table feeds.
+    4720: (_CLS_ACCT, 1, "Success", SEV_MEDIUM, "Account created"),
+    4722: (_CLS_ACCT, 2, "Success", SEV_INFO, "Account enabled"),
+    4726: (_CLS_ACCT, 4, "Success", SEV_MEDIUM, "Account deleted"),
+    4728: (_CLS_ACCT, 5, "Success", SEV_HIGH, "Member added to global security group"),
+    4732: (_CLS_ACCT, 5, "Success", SEV_HIGH, "Member added to local security group"),
 }
 
 
@@ -105,8 +131,21 @@ class WindowsEventLogParser(Parser):
         src_host = rec.get("WorkstationName")   # origin workstation (logon source)
         target_host = rec.get("Computer")       # host the event occurred ON
 
+        # Account Change events (4720/4722/4726/4728/4732): the acting admin is
+        # already captured above as `user` (Subject-first, via the `else` branch).
+        # The account being created/enabled/deleted/granted is a DIFFERENT
+        # identity -- exposed separately, per the module docstring, since OCSF's
+        # actor/user slot is already spoken for by the acting admin.
+        target_user = target_domain = target_user_sid = None
+        if class_uid == _CLS_ACCT:
+            target_user = rec.get("TargetUserName")
+            target_domain = rec.get("TargetDomainName")
+            target_user_sid = rec.get("TargetUserSid")
+
         message = f"{verb} for user {user or '?'}"
-        if event_id == 4688 and rec.get("NewProcessName"):
+        if class_uid == _CLS_ACCT and target_user:
+            message = f"{verb}: {target_user} (by {user or '?'})"
+        elif event_id == 4688 and rec.get("NewProcessName"):
             message = f"{verb}: {rec['NewProcessName']} (by {user or '?'})"
         elif ip:
             message += f" from {ip}"
@@ -165,6 +204,14 @@ class WindowsEventLogParser(Parser):
 
         if actor:
             event["actor"] = actor
+
+        if target_user:
+            target: dict = {"name": target_user}
+            if target_domain:
+                target["domain"] = target_domain
+            if target_user_sid:
+                target["uid"] = str(target_user_sid)
+            event["unmapped"] = {"target_user": target}
 
         return event
 

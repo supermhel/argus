@@ -1,0 +1,192 @@
+"""A6 (v0.3 plan): anti-dormancy guardrail.
+
+A detection rule that filters/groups/distinct-counts on a field NO parser ever
+emits can pass every unit test (synthetic fixtures include the field) yet never
+fire on real data. This exact bug has shipped THREE times: the Windows-parser
+src/dst conflation (fixed), the Cisco-ASA from/to endpoint gap (fixed), and
+bank_db_priv_esc.yml referencing class 6005 with zero real producer (still
+unfixed — see contracts/detection-coverage.md).
+
+This tool runs every registered parser against one REAL representative fixture,
+collects the set of dotted field paths each parser's OUTPUT actually populates
+(union across all parsers = "fields the pipeline can ever produce"), then checks
+every rule's selections/group_by/distinct_field against that ground-truth set.
+It does NOT check rule semantics (that's test_engine_*.py) -- only "does this
+field path ever exist on a real event".
+
+Run: python tools/check_rule_producers.py   (exit 0 = no dormant rules found)
+Wired into run_all_tests.sh (v0.3).
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import yaml
+
+ROOT = Path(__file__).resolve().parent.parent
+SERVICES = ROOT / "services"
+sys.path.insert(0, str(SERVICES / "ws2-normalization"))
+sys.path.insert(0, str(SERVICES))
+
+from parsers import _REGISTRY  # noqa: E402
+
+RULES_DIR = ROOT / "contracts" / "rules"
+
+# One real, representative raw payload per registered parser (source_type -> raw).
+# Mirrors each parser's own test fixtures -- kept minimal, just enough to populate
+# every field branch (e.g. windows_eventlog needs one raw per handled EventID).
+FIXTURES: dict[str, list[dict]] = {
+    "linux_ssh": [
+        {"raw": "Jun 10 13:55:36 db01 sshd[2154]: Failed password for invalid user "
+                "admin from 203.0.113.5 port 51000 ssh2", "meta": {}},
+        {"raw": "Jun 10 13:55:40 db01 sshd[2160]: Accepted publickey for deploy "
+                "from 10.0.0.6 port 50022 ssh2", "meta": {}},
+    ],
+    "cisco_asa": [
+        {"raw": "%ASA-4-106023: Deny tcp src outside:203.0.113.5/51000 "
+                "dst inside:10.0.0.10/22 by access-group acl_out", "meta": {}},
+        {"raw": "%ASA-6-302013: Built outbound TCP connection 1 for "
+                "outside:203.0.113.5/51000 (203.0.113.5/51000) to "
+                "inside:10.0.0.10/22 (10.0.0.10/22)", "meta": {}},
+    ],
+    "active_directory": [
+        {"raw": {"EventID": 4624, "TimeCreated": 1750000000000,
+                 "TargetUserName": "jdoe", "TargetDomainName": "BANKCORP",
+                 "IpAddress": "10.20.30.40", "WorkstationName": "wks-jdoe"},
+         "meta": {}},
+        {"raw": {"EventID": 4625, "TimeCreated": 1750000000000,
+                 "TargetUserName": "jdoe", "TargetDomainName": "BANKCORP",
+                 "IpAddress": "10.20.30.40", "WorkstationName": "wks-jdoe"},
+         "meta": {}},
+    ],
+    "vmware_vsphere": [
+        {"raw": {"operation": "VM.Delete", "vm": "prod-db-07",
+                 "userName": "svc_orchestrator", "host": "vcenter-01",
+                 "ipAddress": "172.16.5.9", "createdTime": 1750000100000},
+         "meta": {}},
+    ],
+    "generic_syslog": [
+        {"raw": "<131>Jun 10 13:55:36 host1 app[99]: disk error", "meta": {}},
+    ],
+    "windows_eventlog": [
+        {"raw": {"EventID": 4624, "TargetUserName": "jdoe", "Computer": "dc01",
+                 "IpAddress": "10.9.9.9", "WorkstationName": "wks-jdoe",
+                 "TimeCreated": 1750000000000}, "meta": {}},
+        {"raw": {"EventID": 4634, "TargetUserName": "jdoe", "Computer": "wks-jdoe"},
+         "meta": {}},
+        {"raw": {"EventID": 4688, "TimeCreated": 1750000000000,
+                 "SubjectUserName": "jdoe", "Computer": "wks-jdoe",
+                 "NewProcessName": r"C:\Windows\System32\cmd.exe",
+                 "NewProcessId": "0x1f4"}, "meta": {}},
+        {"raw": {"EventID": 4672, "SubjectUserName": "admin", "Computer": "dc01"},
+         "meta": {}},
+        {"raw": {"EventID": 4720, "SubjectUserName": "admin",
+                 "TargetUserName": "new_svc", "Computer": "dc01"}, "meta": {}},
+        {"raw": {"EventID": 4728, "SubjectUserName": "admin",
+                 "TargetUserName": "new_svc", "Computer": "dc01"}, "meta": {}},
+        {"raw": {"EventID": 4732, "SubjectUserName": "admin",
+                 "TargetUserName": "new_svc", "Computer": "dc01"}, "meta": {}},
+    ],
+    "db_audit": [
+        {"raw": {"operation": "GRANT", "object": "customers", "user": "dba_svc",
+                 "host": "db-prod-01", "ipAddress": "10.4.4.9"}, "meta": {}},
+        {"raw": {"operation": "SELECT", "user": "reporting_svc"}, "meta": {}},
+    ],
+}
+
+
+def flatten(doc, prefix: str = "") -> dict[str, object]:
+    """dotted-path -> value for every leaf (and every intermediate dict path, so
+    group_by/distinct_field on a container-shaped path still resolves) in a nested
+    dict. Lists are not indexed -- a rule can only address dict paths, per
+    engine.py's get_path."""
+    out: dict[str, object] = {}
+    if isinstance(doc, dict):
+        for k, v in doc.items():
+            p = f"{prefix}.{k}" if prefix else k
+            out[p] = v
+            out.update(flatten(v, p))
+    return out
+
+
+def collect_producible() -> tuple[set[str], set[tuple[str, object]]]:
+    """(all field paths ever populated, all (path, value) pairs ever observed).
+
+    Distinguishing the two matters: an EQUALITY selection like `class_uid: 6005`
+    is only satisfiable if some parser emits class_uid=6005 specifically -- the
+    path existing (class_uid is on every event) is not enough. group_by/
+    distinct_field only need the path to exist (any value groups/counts fine).
+    """
+    all_paths: set[str] = set()
+    all_pairs: set[tuple[str, object]] = set()
+    for source_type, raws in FIXTURES.items():
+        parser = _REGISTRY.get(source_type)
+        if parser is None:
+            print(f"WARNING: fixture defined for unregistered source_type "
+                  f"{source_type!r}", file=sys.stderr)
+            continue
+        for raw in raws:
+            payload = {"source_type": source_type, **raw}
+            event = parser.parse(payload)
+            if event is not None:
+                flat = flatten(event)
+                all_paths |= set(flat)
+                all_pairs |= {(k, v) for k, v in flat.items()
+                             if isinstance(v, (str, int, float, bool)) or v is None}
+    missing = set(_REGISTRY) - set(FIXTURES)
+    if missing:
+        print(f"NOTE: no fixture for registered parser(s) {sorted(missing)} -- "
+              f"their fields are NOT checked. Add a fixture when convenient.",
+              file=sys.stderr)
+    return all_paths, all_pairs
+
+
+def rule_referenced(rule: dict) -> tuple[set[tuple[str, object]], set[str]]:
+    """(equality (path,value) pairs required, path-only fields required)."""
+    equality: set[tuple[str, object]] = set()
+    for sel in (rule.get("detection") or {}).values():
+        if isinstance(sel, dict):
+            equality |= {(k, v) for k, v in sel.items()}
+    path_only: set[str] = set()
+    siem = rule.get("siem") or {}
+    if siem.get("group_by"):
+        path_only.add(siem["group_by"])
+    if siem.get("distinct_field"):
+        path_only.add(siem["distinct_field"])
+    return equality, path_only
+
+
+def main() -> int:
+    producible_paths, producible_pairs = collect_producible()
+    dormant: list[tuple[str, list[str]]] = []
+    for path in sorted(RULES_DIR.glob("*.yml")):
+        rule = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if not rule:
+            continue
+        equality, path_only = rule_referenced(rule)
+        problems = [f"{k}={v!r} never produced" for k, v in equality
+                   if (k, v) not in producible_pairs]
+        problems += [f"{f} path never populated" for f in path_only
+                    if f not in producible_paths]
+        if problems:
+            dormant.append((rule.get("title", path.name), problems))
+
+    if dormant:
+        print("[FAIL] rules that can NEVER fire on real data (no registered "
+              "parser produces a value/field they require):")
+        for title, problems in dormant:
+            print(f"  - {title!r}:")
+            for p in problems:
+                print(f"      {p}")
+        return 1
+
+    print(f"[OK] all {len(list(RULES_DIR.glob('*.yml')))} rules are satisfiable "
+          f"by at least one registered parser's output "
+          f"({len(producible_paths)} field paths, {len(producible_pairs)} "
+          f"(path,value) pairs checked)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
