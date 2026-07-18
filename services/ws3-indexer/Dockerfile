@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.14-slim
 WORKDIR /app
 COPY services/shared /app/shared
 COPY services/ws3-indexer /app/ws3-indexer
