@@ -94,6 +94,7 @@ test-live:
 # empirical `make eval-detection` number below.
 attack-scorecard:
 	@$(PYTHON) eval/attack/coverage_layer.py
+	@$(PYTHON) eval/attack/fire_check.py
 
 # P3 eval lane (Test-data integration section of the audit fix plan) --
 # independent-oracle detection-accuracy replay against real EVTX-ATTACK-

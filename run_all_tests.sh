@@ -254,6 +254,9 @@ $PY tools/demo_nis2.py || fail=1
 echo
 echo "== P3-2 (2026-07-21 audit): declared ATT&CK/ATLAS coverage scorecard =="
 $PY eval/attack/test_coverage_layer.py || fail=1
+echo
+echo "== M7 (2026-07-22): MITRE empirical firing check -- tagged rules fire on their own real fixture =="
+$PY eval/attack/fire_check.py || fail=1
 
 echo
 if [ "$fail" -eq 0 ]; then echo "ALL TESTS PASS"; else echo "SOME TESTS FAILED"; fi
