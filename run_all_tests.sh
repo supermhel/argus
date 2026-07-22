@@ -36,6 +36,12 @@ echo
 echo "== ws3 P1-4 (2026-07-21 audit): OpenSearch _bulk API (NDJSON, partial-failure parsing) =="
 $PY services/ws3-indexer/test_bulk_index.py || fail=1
 echo
+echo "== ws3 M4.3: rule-summary read model (list_rule_summaries, tenant disable, _contracts_dir) =="
+$PY services/ws3-indexer/test_rules_view.py || fail=1
+echo
+echo "== ws3: StorageAdapter legacy CAS/versioning default methods =="
+$PY services/ws3-indexer/test_adapter_defaults.py || fail=1
+echo
 echo "== v0.4 (S1): opt-in API-key auth (ws3 triage, ws6 inventory) =="
 $PY services/ws3-indexer/test_auth.py || fail=1
 $PY services/ws6-inventory/test_auth.py || fail=1
