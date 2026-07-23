@@ -10,7 +10,7 @@ Update this file whenever status changes; it's a living index, not an archive.
 
 ---
 
-## 1. Current state (as of 2026-07-18, PR#2 merged to `main` — M1-M6 of the combined plan + post-M5 adversarial bug-hunt + M3 dashboard-login/CSRF remainder, reconciled with the P0+P1+P2 deep-hardening pass that landed on `main` while this branch was in flight)
+## 1. Current state (as of 2026-07-23, PR#24 merged to `main` — closes M2 + M7 on top of PR#2 [2026-07-18: M1-M6 combined plan + adversarial bug-hunt + M3 remainder] and PR#23 [2026-07-22: full v0.5 Track X backlog + 5 disclosed-gap closeouts]. See the "Forward roadmap" row below and §5 for the milestone-by-milestone breakdown — this header date is the floor for everything in this table, not every individual row's own date)
 
 | Fact | Value |
 |---|---|
@@ -19,9 +19,9 @@ Update this file whenever status changes; it's a living index, not an archive.
 | FENGARDE rebrand | Adopted on PR#2's branch ahead of `main` (`FENGARDE_API_KEY`, `FENGARDE_RBAC_DB`, `fengarde-sec` throughout); made repo-wide by this merge, including the GitHub repo itself (renamed to `github.com/supermhel/fengarde` 2026-07-18, old URL auto-redirects). |
 | Latest release | **v0.3.0** (tag `v0.3.0`, 2026-07-10); v0.4 Tracks 0/S/R/P/D + v0.5 M1-M6 landed on `main` via PR#2, unreleased |
 | License | Apache-2.0, public, `github.com/supermhel/fengarde` |
-| Parsers shipped | 15: Linux SSH, Cisco ASA, Active Directory, VMware vSphere, generic syslog, Windows Event Log (incl. account-change 4720/4722/4726/4728/4732), DB audit, MCP/AI-agent tool-call audit (v0.4 P1), OPC UA/OT audit (v0.4 P2), n8n automation-platform audit (v0.4 P3), DNS query log / Kubernetes audit / CEF / AWS CloudTrail (v0.5 A4), Sysmon process/network/file (P0-3, 2026-07-21 audit fix plan — the first class-1001 File System Activity producer, closing a documented total gap) |
+| Parsers shipped | 16: Linux SSH, Cisco ASA, Active Directory, VMware vSphere, generic syslog, Windows Event Log (incl. account-change 4720/4722/4726/4728/4732), DB audit, MCP/AI-agent tool-call audit (v0.4 P1), OPC UA/OT audit (v0.4 P2), n8n automation-platform audit (v0.4 P3), DNS query log / Kubernetes audit / CEF / AWS CloudTrail (v0.5 A4), Sysmon process/network/file (P0-3, 2026-07-21 audit fix plan — the first class-1001 File System Activity producer, closing a documented total gap), Modbus/TCP protocol-anomaly detector (M7 OT expansion, 2026-07-22 — see the dedicated row below) |
 | v0.5 Track A4: DNS/k8s/CEF/cloud parsers (done) | `services/ws2-normalization/parsers/{dns_query,k8s_audit,cef,cloudtrail}.py` — closes the long-standing class-4002 (DNS/HTTP Activity) gap flagged since v0.3 (`contracts/detection-coverage.md`), adds the first Kubernetes and cloud-control-plane producers, and a vendor-neutral CEF parser that feeds existing `common_*` rules rather than adding a new one (documented as its actual value, not an oversight). 5 new rules ship with real producers and pass the A6 anti-dormancy gate on the first try: `common_dns_exfil`, `dc_privileged_container`, `cloud_root_console_login`, `bank_mass_card_read` (needed one additive field, `unmapped.db.object`, added to the existing `db_audit.py` parser — zero behavior change to its existing output), `common_rapid_account_lifecycle` (reuses `windows_eventlog`'s existing 4720/4726 producers with one new fixture). All 24 shipped rules pass `tools/validate_rules.py` + `tools/check_rule_producers.py`; `tools/coverage_gate.py`'s hand-synced WS-2 test list was updated for the 4 new parser test files (measured 90%, floor 88%, same "keep the list in sync" lesson as the 2026-07-19 CI-gate incident). |
-| Detection rules shipped | 26 (25 from a concurrent, separately-authored session, +1 from the 2026-07-21 audit fix plan's P0-2): brute-force, brute-force-sourceless (P0-2, groups on target host instead of source IP so a sourceless local-auth spray is still caught -- live-proven on real Splunk attack_data, closes 5 of 6 false negatives the audit found), port-scan, lateral-movement, password-spray, privileged-group grant, after-hours admin, bank DB priv-esc, DC mass-VM-delete, impossible-travel (v0.4 P4), agent credential-file access / tool-call burst / prompt-injection indicator / destructive-command / egress-non-allowlisted-domain (v0.4-v0.5 P1), OT write-outside-maintenance / new-engineering-connection / config-change (v0.4 P2), n8n new-webhook-exposed / workflow-modified-after-hours (v0.4 P3), DNS exfil / privileged-container-create / cloud-root-console-login / mass-DB-object-read / rapid-account-lifecycle (v0.5 A4), beaconing (v0.5 A3, periodicity primitive). 25 of 26 carry an optional, shape-validated MITRE ATT&CK/ATT&CK-ICS/ATLAS tag; `agent_tool_call_burst` deliberately has none (no defensible single-technique mapping). |
+| Detection rules shipped | 27 (26 as of PR#23, +1 from PR#24's Modbus OT expansion): brute-force, brute-force-sourceless (P0-2, groups on target host instead of source IP so a sourceless local-auth spray is still caught -- live-proven on real Splunk attack_data, closes 5 of 6 false negatives the audit found), port-scan, lateral-movement, password-spray, privileged-group grant, after-hours admin, bank DB priv-esc, DC mass-VM-delete, impossible-travel (v0.4 P4), agent credential-file access / tool-call burst / prompt-injection indicator / destructive-command / egress-non-allowlisted-domain (v0.4-v0.5 P1), OT write-outside-maintenance / new-engineering-connection / config-change / Modbus unauthorized-write (v0.4 P2 + M7), n8n new-webhook-exposed / workflow-modified-after-hours (v0.4 P3), DNS exfil / privileged-container-create / cloud-root-console-login / mass-DB-object-read / rapid-account-lifecycle (v0.5 A4), beaconing (v0.5 A3, periodicity primitive). 26 of 27 carry an optional, shape-validated MITRE ATT&CK/ATT&CK-ICS/ATLAS tag (confirmed 26/26 tagged rules empirically fire, `eval/attack/fire_check.py`, PR#24); `agent_tool_call_burst` deliberately has none (no defensible single-technique mapping). |
 | B4 rule hot-reload (v0.5, done) | Opt-in mtime-poll watcher (`RULES_RELOAD_INTERVAL_S`, default 0 = off, byte-identical to pre-B4 behavior): `Detector.reload()` re-parses `contracts/rules/`+allowlists and atomically swaps in the new set, fail-closed on a malformed edit (old set kept, logged loudly). Window-state semantics documented in `services/ws4-detection/main.py`: counters key by rule id, so unchanged rules keep in-flight windows across a reload. `services/ws4-detection/test_hot_reload.py` (zero-infra). **Caveat surfaced by this work**: `contracts/` is baked into the ws4-detection image via Dockerfile `COPY`, not volume-mounted, so hot-reload as shipped only fires on a bind-mount/non-Docker deployment or after an image rebuild — a live-Docker demo of hot-reload picking up a host-side edit with no rebuild is a real follow-up gap, tracked here rather than silently assumed to work. |
 | C2 dashboard auto-refresh (v0.5, done) | `services/ws7-dashboard/index.html` polls `/api/alerts` every 10s, only when data is LIVE (mock mode has nothing to poll) and the tab is visible (`document.hidden` guard), and skips the DOM rebuild entirely when the fetched alert set is byte-identical to what's on screen (protects an in-progress, unsaved triage-note edit from being clobbered by a background re-render). SSE/WebSocket push was considered and deliberately deferred — polling against the existing nginx proxy adds zero new endpoints/failure modes. Live-verified on Docker Desktop. |
 | C3 MITRE coverage heatmap (v0.5, done) | `tools/validate_rules.py` gained an optional `mitre: {framework?, tactic, technique}` shape check (ATT&CK/ATT&CK-ICS/ATLAS id patterns); `services/ws4-detection/main.py::make_alert` now passes the rule's `mitre` block onto every alert (additive field, `contracts/opensearch-mappings/alerts.json` mapping_version bumped to 3 to index it as keyword); the dashboard's new "Coverage" view (`services/ws7-dashboard/index.html`) renders a tactic x technique heatmap shaded by real alert counts, reading `GET /api/rules` (new nginx proxy to ws3-indexer's existing `/rules` route) plus live alerts. Untagged rules are listed separately, not hidden. Live-verified end-to-end on Docker Desktop: `common_bruteforce`'s real fired alert showed "1 alert" under T1110/TA0006. **Two real, previously-undetected bugs found and fixed while verifying this live** (not introduced by this work, just never live-tested before): (1) `services/ws3-indexer/rules_view.py` and `webhooks.py` computed their `contracts/` path via a fixed parent-count (`_HERE.parent.parent`) that's correct on a host checkout but wrong inside the container's flatter layout, so `GET /rules` (M4.3) and outbound webhook config loading had returned empty/nothing on every live Docker deployment since they shipped — fixed with the same dual-path-probe helper `ws4-detection/main.py` already used, and the ws3-indexer Dockerfile was also missing a `COPY contracts` entirely (present on ws4-detection, absent on ws3-indexer) so the directory wasn't even there to find. (2) the dashboard's `getAlerts()` never mapped `rule_id` from the OpenSearch alert document into the JS alert object, so the heatmap (and any future feature joining alerts to rules) silently couldn't match a fired alert back to its rule; fixed by passing the field through. |
@@ -118,6 +118,38 @@ those words get reused loosely across specs written weeks apart.
 
 ## 4. Known doc debt (don't fix silently, flag before touching)
 
+- ~~`SECURITY.md` said "current threat boundary (v0.4)" in its header and "Out
+  of scope (as of v0.4)" listed multi-tenancy and RBAC as deferred, when M4
+  shipped both.~~ **Fixed 2026-07-23** — version claims genericized to
+  "current" (each section already carries its own accurate milestone label),
+  out-of-scope list corrected, supported-versions table updated from a
+  leftover "v0.1 (`main`)" to `main`/v0.3.0.
+- ~~`README.md` had a duplicated "Triage workflow" row, a stale "v0.3 shipped,
+  v0.4 in progress" header, a Scorecard-badge note claiming "unknown" after
+  the workflow had already run, and no row at all for M4/M5 (multi-tenancy,
+  RBAC, versioned API, webhooks, plugins, chaos gate, NIS2 template).~~
+  **Fixed 2026-07-23.**
+- ~~`CONTRIBUTING.md`'s "Project scope" section described v0.1 ("4 parsers,
+  AI triage is a stub") as the current state and pointed contributors at the
+  v0.1 build plan as the scope authority.~~ **Fixed 2026-07-23** — now points
+  to SSOT.md as the scope authority instead of hardcoding a version snapshot
+  that goes stale on every release.
+- ~~SSOT.md's own §1 header said "as of 2026-07-18" and §5 was dated `8b3f450`/
+  2026-07-16 with M2 badges marked "wired, not yet fired" — both had drifted
+  behind the document's own body, which already recorded CI going green
+  2026-07-19 and M2 closing 2026-07-22 (PR#24). A reader trusting the section
+  headers over the table rows would have under-stated progress by 5 days.~~
+  **Fixed 2026-07-23** — header/§5 dates and gate statuses now match the
+  latest recorded row (PR#24); parser/rule shipped-counts in §1 (15→16, 26→27)
+  updated to include PR#24's Modbus addition, which had landed in its own
+  dedicated row (line 48) without the summary counts being bumped to match.
+- **Open thread, not yet resolved either way**: the v0.5 combined-plan doc's
+  §B.4 deferred "shared pydantic schema package" to "the M2 PR that would
+  introduce it" — grepped the repo 2026-07-23, zero pydantic usage anywhere.
+  No PR ever made this decision either way; it's a genuinely dangling item,
+  not silently dropped by this fix pass. Flag to the owner if a real answer
+  is wanted.
+
 - ~~`services/ws2-normalization/INTERFACE.md` says "3 parsers"; code has 7.~~ **Fixed 2026-07-04** — now lists all 7.
 - ~~Open-core decision isn't yet reflected in `README.md`/`LICENSE`/`SECURITY.md`.~~
   **Fixed 2026-07-21** — README.md now has an "Open core" section (free forever, paid layer
@@ -131,7 +163,7 @@ those words get reused loosely across specs written weeks apart.
   clone/fork). This SSOT file remains the authoritative status source; nothing substantive was
   lost from what a reader needs to trust this repo's claims.
 
-## 5. M6 launch readiness (as of `8b3f450`, 2026-07-16) — assessment only, NOT a launch
+## 5. M6 launch readiness (as of 2026-07-23, post-PR#24) — assessment only, NOT a launch
 
 **No public post, PR-for-review-purposes-only exception aside, or announcement of any kind
 has happened.** The combined plan's M6 milestone requires human approval regardless of gate
@@ -143,23 +175,26 @@ where the gate criteria actually stand, not a decision to launch.
 
 | Gate | Status | Why |
 |---|---|---|
-| M4 MSP-grade | **Green** | Multi-tenancy, RBAC, versioned API, webhooks, plugins, ops lifecycle all built and tested zero-infra (see §1's MSP-grade row). One real, disclosed gap (ILM/ISM policy schema, §2) doesn't block the gate — it was never part of M4's own scope, it's a pre-existing issue M4.6's work happened to surface. |
-| M2 bench numbers | **Green** | Real, reproducible EPS/RSS numbers in README (`tools/fengarde_bench.py`), not fabricated. |
-| M2 badges (CodeQL/Scorecard/Dependabot) | **Wired, not yet fired** | Workflows exist and are correctly configured; badges will reflect real values once each workflow's first run completes on `main` after this branch merges — today they read "unknown," honestly, not a pre-claimed score. |
+| M4 MSP-grade | **Green** | Multi-tenancy, RBAC, versioned API, webhooks, plugins, ops lifecycle all built, tested zero-infra AND live (Track X closeout, PR#23) — the ILM/ISM policy-schema gap this row used to flag is now **fixed and live-verified** (§2). |
+| M2 bench numbers + quality floor | **Green — CLOSED 2026-07-22** | Real, reproducible EPS/RSS numbers in README; ruff + coverage + **mypy now blocking** (re-measured 47 real findings, all fixed) + **mutmut baseline measured** (142 mutants on `services/shared/sessions.py`, 72% kill rate, informational) — see §1's "Forward roadmap" row for the full account. |
+| M2 badges (CI/CodeQL/Scorecard) | **Green — fired 2026-07-19** | All three workflows have run on `main` and are green; Scorecard's findings drove a supply-chain pinning pass (54→19 accepted alerts, see §1's CI row). No longer "wired, not fired" — this was true as of 2026-07-18 and is now stale in the other direction; corrected here 2026-07-23. |
 | M1 `make chaos` | **GREEN — PASS (2026-07-18)** | `scenarios=40 lost=0 duplicated=0`, all 5 pipeline services SIGKILLed mid-replay on a fresh live stack (Docker Desktop 4.80.0). Getting here burned down 4 real harness bugs across 4 runs (compose-kill restart suppression, killer-thread race, future-timestamped scenarios tripping the P0 window-poisoning guard, shared-username triggering the spray rule cross-scenario) — full history in §2's chaos row and `tools/chaos_test.py`'s honesty note. The interim "34/40 lost" scare was the P0 far-future guard doing its job against the harness, not a pipeline defect. |
 
-**Bottom line: all four gate criteria are now green (chaos gate closed 2026-07-18 with a
-real passing run — see §1/§2), with the badge criterion green-pending-first-CI-run on
-`main`.** Whether that means launch, and when, is the repo owner's call — this file states
-the facts, not the decision. M6 still requires explicit human approval per standing
-instruction; nothing has been posted or announced.
+**Bottom line: all four gate criteria are green, and have been since 2026-07-19** (M1
+chaos closed 2026-07-18, M2 badges fired 2026-07-19, M2 quality floor closed 2026-07-22,
+M4 green since PR#23). **M7's continuous tracks (MITRE empirical fire-check, Prometheus/
+Grafana observability, Modbus OT expansion) are also substantially done as of PR#24
+(2026-07-23)**, though M7 was never a launch gate to begin with. Whether green gates mean
+launch, and when, is the repo owner's call — this file states the facts, not the decision.
+**M6 still requires explicit human approval per standing instruction; nothing has been
+posted or announced, as of this update.**
 
 M5 (NIS2 template layer) is strongly preferred in the launch narrative per the plan but is
 NOT a hard gate; it is also done (§1).
 
-**Nothing in this session executed any part of the launch-sequencing plan** (relocated
-out of this repo, §4). It remains exactly what it was: a written, unexecuted sequencing
-plan, pending explicit human go-ahead.
+**Nothing in any session through PR#24 has executed any part of the launch-sequencing
+plan** (relocated out of this repo, §4). It remains exactly what it was: a written,
+unexecuted sequencing plan, pending explicit human go-ahead.
 
 ---
 
